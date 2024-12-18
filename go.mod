@@ -5,6 +5,7 @@ go 1.23.3
 require (
 	github.com/coreos/go-oidc/v3 v3.11.0
 	github.com/fsnotify/fsnotify v1.8.0
+	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.2.0
 	github.com/jackc/pgx/v5 v5.7.1
 	github.com/mattn/go-isatty v0.0.20
 	github.com/pkg/errors v0.9.1

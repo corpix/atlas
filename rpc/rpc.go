@@ -1,3 +1,3 @@
-package grpc
+package rpc
 
 type void = struct{}
