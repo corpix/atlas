@@ -107,7 +107,7 @@ func (s *Supervisor) Cancel() {
 	s.cancel(SupervisorCanceled{})
 }
 
-func NewSupervisor(ctx context.Context) *Supervisor {
+func New(ctx context.Context) *Supervisor {
 	s := &Supervisor{
 		Context: ctx,
 		drain:   make(chan void),

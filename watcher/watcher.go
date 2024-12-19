@@ -160,7 +160,7 @@ func (w *Watcher) Run(ctx context.Context) {
 	}
 }
 
-func NewWatcher() (*Watcher, error) {
+func New() (*Watcher, error) {
 	w, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, err
@@ -186,7 +186,7 @@ type MultiWatcher struct {
 
 type MultiWatcherOption any
 
-func NewMultiWatcher(w *Watcher, names []string, callback func(), opts ...MultiWatcherOption) (*MultiWatcher, error) {
+func NewMulti(w *Watcher, names []string, callback func(), opts ...MultiWatcherOption) (*MultiWatcher, error) {
 	mw := &MultiWatcher{
 		watcher:  w,
 		names:    make(map[string]bool),
