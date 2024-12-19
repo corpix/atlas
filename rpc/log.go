@@ -7,7 +7,7 @@ import (
 	grpc_logging "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
 	"github.com/rs/zerolog"
 
-	"git.tatikoma.dev/corpix/atlas/grpc/auth"
+	"git.tatikoma.dev/corpix/atlas/rpc/auth"
 )
 
 func LoggerInterceptor(l zerolog.Logger) grpc_logging.Logger {
