@@ -1,5 +1,7 @@
 git.tatikoma.dev/corpix/protoc-gen-grpc-capabilities v0.0.0-20241221085904-8a684a1ec9d1 h1:GpFlHSHZX5Ne7YHtAvLz284SiqTssP43kLHG4gSbbmw=
 git.tatikoma.dev/corpix/protoc-gen-grpc-capabilities v0.0.0-20241221085904-8a684a1ec9d1/go.mod h1:FzmcHMvi9biiEPj/c1FL+a7Kks4pHfkHzt7aYHPoOSc=
+git.tatikoma.dev/corpix/protoc-gen-grpc-capabilities v0.0.0-20241221090423-936b86f3a52c h1:daZIL2CSayhLymAC2lHU+y7zG2PiwEalTZUOR2oZ7n0=
+git.tatikoma.dev/corpix/protoc-gen-grpc-capabilities v0.0.0-20241221090423-936b86f3a52c/go.mod h1:pvM7qMNq8Kb1xF2Vz7RtRIeSB5Bdao2W1fpIjibBKwY=
 github.com/coreos/go-oidc/v3 v3.11.0 h1:Ia3MxdwpSw702YW0xgfmP1GVCMA9aEFWu12XUZ3/OtI=
 github.com/coreos/go-oidc/v3 v3.11.0/go.mod h1:gE3LgjOgFoHi9a4ce4/tJczr0Ai2/BoDhf0r5lltWI0=
 github.com/coreos/go-systemd/v22 v22.5.0/go.mod h1:Y58oyj3AT4RCenI/lSvhwexgC+NSVTIJ3seZv2GcEnc=

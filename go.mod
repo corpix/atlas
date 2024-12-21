@@ -3,7 +3,7 @@ module git.tatikoma.dev/corpix/atlas
 go 1.23.3
 
 require (
-	git.tatikoma.dev/corpix/protoc-gen-grpc-capabilities v0.0.0-20241221085904-8a684a1ec9d1
+	git.tatikoma.dev/corpix/protoc-gen-grpc-capabilities v0.0.0-20241221090423-936b86f3a52c
 	github.com/coreos/go-oidc/v3 v3.11.0
 	github.com/fsnotify/fsnotify v1.8.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.2.0
