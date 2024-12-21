@@ -9,7 +9,6 @@ import (
 type (
 	authTokenContextKey        void
 	authTokenClaimsContextKey  void
-	authCapabilitiesContextKey void
 )
 
 const (
@@ -19,7 +18,6 @@ const (
 var (
 	AuthTokenContextKey        authTokenContextKey
 	AuthTokenClaimsContextKey  authTokenClaimsContextKey
-	AuthCapabilitiesContextKey authCapabilitiesContextKey
 )
 
 type streamWithCtx struct {

@@ -28,6 +28,8 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
+
+	caps "git.tatikoma.dev/corpix/protoc-gen-grpc-capabilities/capabilities"
 )
 
 var (
@@ -47,7 +49,7 @@ type AuthClaims struct {
 
 type AuthConfig struct {
 	URL *url.URL
-	ACL CapabilityRuleMap
+	ACL caps.CapabilityRuleMap
 
 	Certificate *AuthCertificateConfig
 	Token       *AuthTokenConfig
@@ -98,7 +100,7 @@ type Auth struct {
 	tls        *tls.Config
 	tlsManager *TLSConfigCertificateManager
 	token      *token
-	acl        CapabilityRuleMap
+	acl        caps.CapabilityRuleMap
 }
 
 func (a *Auth) TLS() *tls.Config {
@@ -301,7 +303,7 @@ func (a *Auth) authenticateGrpcContext(ctx context.Context) (context.Context, er
 
 func (a *Auth) authorizeGrpcContext(ctx context.Context, method string) (context.Context, error) {
 	var (
-		caps       = Capabilities{}
+		caps       = caps.Capabilities{}
 		err        error
 		authorized bool
 	)
@@ -340,10 +342,10 @@ func (a *Auth) authorizeGrpcContext(ctx context.Context, method string) (context
 			method, caps.String(), rule.String(),
 		)
 	}
-	return context.WithValue(ctx, AuthCapabilitiesContextKey, caps), nil
+	return context.WithValue(ctx, caps.CapabilitiesContextKey, caps), nil
 }
 
-func (a *Auth) capabilitiesFromCertificate(cert *x509.Certificate) (Capabilities, error) {
+func (a *Auth) capabilitiesFromCertificate(cert *x509.Certificate) (caps.Capabilities, error) {
 	for _, ext := range cert.Extensions {
 		if !ext.Id.Equal(AuthCapabilitiesCertificateOID) {
 			continue
@@ -361,14 +363,14 @@ func (a *Auth) capabilitiesFromCertificate(cert *x509.Certificate) (Capabilities
 
 		return a.parseCapabilities(capSlice), nil
 	}
-	return Capabilities{}, nil
+	return caps.Capabilities{}, nil
 }
 
-func (a *Auth) parseCapabilities(caps []string) Capabilities {
-	capabilities := make(Capabilities, len(caps))
+func (a *Auth) parseCapabilities(caps []string) caps.Capabilities {
+	capabilities := make(caps.Capabilities, len(caps))
 	for _, capString := range caps {
 		capWithParams := strings.Split(capString, ":")
-		cap := NewCapability(CapabilityLiteral(capWithParams[0]), capWithParams[1:]...)
+		cap := caps.NewCapability(caps.CapabilityLiteral(capWithParams[0]), capWithParams[1:]...)
 		capabilities[cap.ID] = cap
 	}
 	return capabilities
