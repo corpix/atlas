@@ -33,6 +33,9 @@ import (
 var (
 	AuthTokenStateCookieName = "token_state_" + hex.EncodeToString(fnv.New64a().Sum([]byte(fmt.Sprintf("%T", token{}))))[:8]
 	AuthTokenCookieName      = "token_" + hex.EncodeToString(fnv.New64a().Sum([]byte(fmt.Sprintf("%T", token{}))))[:8]
+
+	// well_known_private_prefix + [ord(x) for x in "atlas"]
+	AuthCapabilitiesCertificateOID = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 97, 116, 108, 97, 115}
 )
 
 type void struct{}
@@ -342,7 +345,7 @@ func (a *Auth) authorizeGrpcContext(ctx context.Context, method string) (context
 
 func (a *Auth) capabilitiesFromCertificate(cert *x509.Certificate) (Capabilities, error) {
 	for _, ext := range cert.Extensions {
-		if !ext.Id.Equal(CapabilitiesCertificateOID) {
+		if !ext.Id.Equal(AuthCapabilitiesCertificateOID) {
 			continue
 		}
 		var rawValue string
@@ -365,7 +368,7 @@ func (a *Auth) parseCapabilities(caps []string) Capabilities {
 	capabilities := make(Capabilities, len(caps))
 	for _, capString := range caps {
 		capWithParams := strings.Split(capString, ":")
-		cap := NewCapability(CapabilityID(capWithParams[0]), capWithParams[1:]...)
+		cap := NewCapability(CapabilityLiteral(capWithParams[0]), capWithParams[1:]...)
 		capabilities[cap.ID] = cap
 	}
 	return capabilities

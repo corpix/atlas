@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"encoding/asn1"
 	"fmt"
 	"sort"
 	"strings"
@@ -11,54 +10,12 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// CapabilityID contains (uniq) name of capability
-type (
-	CapabilityID  string
-	CapabilityIDs []CapabilityID
-)
-
-var (
-	// private_prefix + [ord(x) for x in "rforge"]
-	CapabilitiesCertificateOID = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 114, 102, 111, 114, 103, 101}
-
-	capabilityIds      = map[CapabilityID]void{}
-	CapabilityIDAgent  = defineCapability("agent")
-	CapabilityIDAdmin  = defineCapability("admin")
-	CapabilityIDReader = defineCapability("reader")
-)
-
-func (cid CapabilityID) String() string {
-	return string(cid)
-}
-
-func (cid CapabilityID) Match(caps Capabilities) bool {
-	_, ok := caps[cid]
-	return ok
-}
-
-func (c CapabilityIDs) String() string {
-	names := make([]string, 0, len(c))
-	for _, v := range c {
-		names = append(names, string(v))
-	}
-	sort.Strings(names)
-	return "[" + strings.Join(names, ", ") + "]"
-}
-
-func defineCapability(name string) CapabilityID {
-	id := CapabilityID(name)
-	capabilityIds[id] = void{}
-	return id
-}
-
-//
-
 type (
 	Capability struct {
-		ID         CapabilityID
+		ID         CapabilityLiteral
 		Parameters []string
 	}
-	Capabilities map[CapabilityID]*Capability
+	Capabilities map[CapabilityLiteral]*Capability
 )
 
 func (c *Capability) String() string {
@@ -78,7 +35,7 @@ func (c Capabilities) String() string {
 	return "[" + strings.Join(names, ", ") + "]"
 }
 
-func (c Capabilities) Match(wantCapsIds ...CapabilityID) Capabilities {
+func (c Capabilities) Match(wantCapsIds ...CapabilityLiteral) Capabilities {
 	matchedCaps := make(Capabilities, len(wantCapsIds))
 	for _, capId := range wantCapsIds {
 		for _, currentCap := range c {
@@ -91,7 +48,7 @@ func (c Capabilities) Match(wantCapsIds ...CapabilityID) Capabilities {
 	return matchedCaps
 }
 
-func (c Capabilities) Get(wantCapId CapabilityID) *Capability {
+func (c Capabilities) Get(wantCapId CapabilityLiteral) *Capability {
 	currentCap, ok := c[wantCapId]
 	if !ok {
 		return nil
@@ -99,7 +56,7 @@ func (c Capabilities) Get(wantCapId CapabilityID) *Capability {
 	return currentCap
 }
 
-func (c Capabilities) Assert(wantCapId CapabilityID) *Capability {
+func (c Capabilities) Assert(wantCapId CapabilityLiteral) *Capability {
 	cap := c.Get(wantCapId)
 	if cap == nil {
 		panic(fmt.Errorf(
@@ -110,7 +67,7 @@ func (c Capabilities) Assert(wantCapId CapabilityID) *Capability {
 	return cap
 }
 
-func NewCapability(id CapabilityID, params ...string) *Capability {
+func NewCapability(id CapabilityLiteral, params ...string) *Capability {
 	return &Capability{
 		ID:         id,
 		Parameters: params,
@@ -133,19 +90,41 @@ type (
 		String() string
 		Match(Capabilities) bool
 	}
-	CapabilityRuleAnd []CapabilityID
-	CapabilityRuleOr  []CapabilityID
+	CapabilityRuleAnd []CapabilityLiteral
+	CapabilityRuleOr  []CapabilityLiteral
+
+	// CapabilityLiteral contains (uniq) name of capability
+	CapabilityLiteral  string
+	CapabilityLiterals []CapabilityLiteral
 )
 
-func CapRuleAnd(ids ...CapabilityID) CapabilityRuleAnd {
+func (cid CapabilityLiteral) String() string {
+	return string(cid)
+}
+
+func (cid CapabilityLiteral) Match(caps Capabilities) bool {
+	_, ok := caps[cid]
+	return ok
+}
+
+func (c CapabilityLiterals) String() string {
+	names := make([]string, 0, len(c))
+	for _, v := range c {
+		names = append(names, string(v))
+	}
+	sort.Strings(names)
+	return "[" + strings.Join(names, ", ") + "]"
+}
+
+func CapRuleAnd(ids ...CapabilityLiteral) CapabilityRuleAnd {
 	return CapabilityRuleAnd(ids)
 }
-func CapRuleOr(ids ...CapabilityID) CapabilityRuleOr {
+func CapRuleOr(ids ...CapabilityLiteral) CapabilityRuleOr {
 	return CapabilityRuleOr(ids)
 }
 
 func (cr CapabilityRuleAnd) String() string {
-	return CapabilityIDs(cr).String()
+	return CapabilityLiterals(cr).String()
 }
 func (cr CapabilityRuleAnd) Match(caps Capabilities) bool {
 	var ok bool
@@ -159,7 +138,7 @@ func (cr CapabilityRuleAnd) Match(caps Capabilities) bool {
 }
 
 func (cr CapabilityRuleOr) String() string {
-	return CapabilityIDs(cr).String()
+	return CapabilityLiterals(cr).String()
 }
 func (cr CapabilityRuleOr) Match(caps Capabilities) bool {
 	var ok bool
