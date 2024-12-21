@@ -29,7 +29,7 @@ import (
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 
-	caps "git.tatikoma.dev/corpix/protoc-gen-grpc-capabilities/capabilities"
+	"git.tatikoma.dev/corpix/protoc-gen-grpc-capabilities/capabilities"
 )
 
 var (
@@ -49,7 +49,7 @@ type AuthClaims struct {
 
 type AuthConfig struct {
 	URL *url.URL
-	ACL caps.CapabilityRuleMap
+	ACL capabilities.CapabilityRuleMap
 
 	Certificate *AuthCertificateConfig
 	Token       *AuthTokenConfig
@@ -100,7 +100,7 @@ type Auth struct {
 	tls        *tls.Config
 	tlsManager *TLSConfigCertificateManager
 	token      *token
-	acl        caps.CapabilityRuleMap
+	acl        capabilities.CapabilityRuleMap
 }
 
 func (a *Auth) TLS() *tls.Config {
@@ -303,7 +303,7 @@ func (a *Auth) authenticateGrpcContext(ctx context.Context) (context.Context, er
 
 func (a *Auth) authorizeGrpcContext(ctx context.Context, method string) (context.Context, error) {
 	var (
-		caps       = caps.Capabilities{}
+		caps       = capabilities.Capabilities{}
 		err        error
 		authorized bool
 	)
@@ -342,10 +342,10 @@ func (a *Auth) authorizeGrpcContext(ctx context.Context, method string) (context
 			method, caps.String(), rule.String(),
 		)
 	}
-	return context.WithValue(ctx, caps.CapabilitiesContextKey, caps), nil
+	return context.WithValue(ctx, capabilities.CapabilitiesContextKey, caps), nil
 }
 
-func (a *Auth) capabilitiesFromCertificate(cert *x509.Certificate) (caps.Capabilities, error) {
+func (a *Auth) capabilitiesFromCertificate(cert *x509.Certificate) (capabilities.Capabilities, error) {
 	for _, ext := range cert.Extensions {
 		if !ext.Id.Equal(AuthCapabilitiesCertificateOID) {
 			continue
@@ -363,17 +363,20 @@ func (a *Auth) capabilitiesFromCertificate(cert *x509.Certificate) (caps.Capabil
 
 		return a.parseCapabilities(capSlice), nil
 	}
-	return caps.Capabilities{}, nil
+	return capabilities.Capabilities{}, nil
 }
 
-func (a *Auth) parseCapabilities(caps []string) caps.Capabilities {
-	capabilities := make(caps.Capabilities, len(caps))
-	for _, capString := range caps {
-		capWithParams := strings.Split(capString, ":")
-		cap := caps.NewCapability(caps.CapabilityLiteral(capWithParams[0]), capWithParams[1:]...)
-		capabilities[cap.ID] = cap
+func (a *Auth) parseCapabilities(capStrs []string) capabilities.Capabilities {
+	caps := make(capabilities.Capabilities, len(capStrs))
+	for _, capStr := range capStrs {
+		capWithParams := strings.Split(capStr, ":")
+		cap := capabilities.NewCapability(
+			capabilities.CapabilityLiteral(capWithParams[0]),
+			capWithParams[1:]...,
+		)
+		caps[cap.ID] = cap
 	}
-	return capabilities
+	return caps
 }
 
 func (a *Auth) CertificateManager() *TLSConfigCertificateManager {
