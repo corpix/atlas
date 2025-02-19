@@ -35,11 +35,19 @@ func ConvertJSONToStruct(j []byte) (*structpb.Value, error) {
 	return structpb.NewValue(value)
 }
 
-func ConvertTimestamp(t pgtype.Timestamptz) *timestamppb.Timestamp {
+func ConvertFromPGToPBTimestamp(t pgtype.Timestamptz) *timestamppb.Timestamp {
 	if !t.Valid {
 		return nil
 	}
 	return timestamppb.New(t.Time)
+}
+
+func ConvertFromPBToPGTimestamp(t *timestamppb.Timestamp) pgtype.Timestamptz {
+	return pgtype.Timestamptz{
+		Time:             t.AsTime(),
+		InfinityModifier: pgtype.Finite,
+		Valid:            true,
+	}
 }
 
 func ConvertCIDR(cidrStr string) (netip.Prefix, error) {
