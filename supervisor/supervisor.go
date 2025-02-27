@@ -106,6 +106,17 @@ func (s *Supervisor) cancel(cause error) {
 	s.tasks.cancel(cause)
 }
 
+func (s *Supervisor) Select(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-s.ErrorsChan():
+		return err
+	case <-s.DrainChan():
+		return nil
+	}
+}
+
 func New(ctx context.Context) *Supervisor {
 	return &Supervisor{
 		Context: ctx,
