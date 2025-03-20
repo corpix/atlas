@@ -93,6 +93,17 @@ func (s *Supervisor) run(ctx context.Context, taskNode *task) {
 	}
 }
 
+func (s *Supervisor) Nested(name string, nested *Supervisor) {
+	s.Run(name, func(ctx context.Context) error {
+		go func() {
+			<-ctx.Done()
+			nested.Cancel()
+		}()
+
+		return nested.Select(ctx)
+	})
+}
+
 func (s *Supervisor) Cancel() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
