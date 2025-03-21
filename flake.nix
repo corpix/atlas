@@ -64,8 +64,9 @@
         packages = envPackages;
         shellHook = ''
           export GOTELEMETRY=off
-          export GOPRIVATE=
+          export GOPRIVATE=git.tatikoma.dev/
           export GOSUMDB=off
+          export GOPROXY=https://goproxy.tatikoma.dev
         '';
       };
     });
