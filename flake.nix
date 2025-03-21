@@ -67,6 +67,8 @@
           export GOPRIVATE=git.tatikoma.dev/
           export GOSUMDB=off
           export GOPROXY=https://goproxy.tatikoma.dev
+
+          export NIX_PATH=nixpkgs=${nixpkgs}
         '';
       };
     });
