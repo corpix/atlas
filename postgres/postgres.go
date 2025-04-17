@@ -4,9 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/jackc/pgerrcode"
 	pgx "github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"git.tatikoma.dev/corpix/atlas/errors"
@@ -17,11 +15,11 @@ type (
 	Pool = pgxpool.Pool
 )
 
-func NewClient(url string, timeout time.Duration) (*Pool, error) {
+func NewClient(dsn string, timeout time.Duration) (*Pool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, url)
+	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to connect to database")
 	}
@@ -33,13 +31,12 @@ func NewClient(url string, timeout time.Duration) (*Pool, error) {
 }
 
 func WithTxContext[T any](ctx context.Context, dbc *Pool, fn func(Tx) (T, error)) (T, error) {
+	var result  T
 	tx, err := dbc.Begin(ctx)
 	if err != nil {
-		var zero T
-		return zero, errors.Wrap(err, errors.ErrBeginTx)
+		return result, errors.Wrap(err, errors.ErrBeginTx)
 	}
 
-	var result T
 	defer func() {
 		// closure is required to capture err value after execution of fn
 		_ = EndTxContext(ctx, tx, err)
@@ -93,17 +90,4 @@ fail:
 	errors.Log(tx.Rollback(ctx), errors.ErrRollbackTx)
 
 	return err
-}
-
-func ErrIsNoRows(err error) bool {
-	return errors.Is(err, ErrNoRows)
-}
-
-func ErrIsConflict(err error) bool {
-	if pgErr, ok := err.(*pgconn.PgError); ok {
-		if pgErr.Code == pgerrcode.UniqueViolation {
-			return true
-		}
-	}
-	return false
 }

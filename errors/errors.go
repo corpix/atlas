@@ -21,6 +21,7 @@ var (
 	Wrap   = errors.Wrap
 	Wrapf  = errors.Wrapf
 	Errorf = fmt.Errorf
+	New    = errors.New
 )
 
 func Log(err error, fmt string, args ...any) {
