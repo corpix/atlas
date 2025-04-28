@@ -172,7 +172,7 @@ func TestPoolJobsChExecutesJob(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 
-	job := p.JobContext(context.Background(), func(ctx context.Context) (any, error) {
+	job := p.JobWithContext(context.Background(), func(ctx context.Context) (any, error) {
 		wg.Done()
 		return nil, nil
 	})
@@ -209,14 +209,14 @@ func TestPoolJobsChFullBacklog(t *testing.T) {
 		return "done", nil
 	}
 
-	job1 := p.JobContext(context.Background(), blockingFn)
+	job1 := p.JobWithContext(context.Background(), blockingFn)
 	select {
 	case p.JobsCh() <- job1:
 	case <-time.After(50 * time.Millisecond):
 		t.Fatal("timed out sending first job to JobsCh")
 	}
 
-	job2 := p.JobContext(
+	job2 := p.JobWithContext(
 		context.Background(),
 		func(ctx context.Context) (any, error) {
 			return "second", nil
@@ -240,7 +240,7 @@ func TestPoolJobsChCancellationPreventsCompletionSignal(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	completionSignal := make(chan void, 1)
 
-	job := p.JobContext(ctx, func(ctx context.Context) (any, error) {
+	job := p.JobWithContext(ctx, func(ctx context.Context) (any, error) {
 		select {
 		case <-time.After(200 * time.Millisecond):
 			completionSignal <- void{}

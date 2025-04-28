@@ -91,7 +91,7 @@ func (p *Pool) workerRunJob(job *Job) {
 	}
 }
 
-func (p *Pool) JobContext(ctx context.Context, fn Workload) *Job {
+func (p *Pool) JobWithContext(ctx context.Context, fn Workload) *Job {
 	return &Job{
 		Fn:       fn,
 		Ctx:      ctx,
@@ -100,7 +100,7 @@ func (p *Pool) JobContext(ctx context.Context, fn Workload) *Job {
 }
 
 func (p *Pool) RunContext(ctx context.Context, fn Workload) (any, error) {
-	job := p.JobContext(ctx, fn)
+	job := p.JobWithContext(ctx, fn)
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
