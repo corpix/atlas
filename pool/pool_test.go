@@ -9,18 +9,24 @@ import (
 	"time"
 )
 
-func TestPoolNewAndSize(t *testing.T) {
-	size := 5
-	p := New(size, 1)
+func TestPoolNewAndConfig(t *testing.T) {
+	cfg := DefaultConfig
+	cfg.Size = 5
+	p := New(cfg)
 	defer p.Close()
 
-	if p.Size() != size {
-		t.Errorf("expected size %d, got %d", size, p.Size())
+	if p.Size() != cfg.Size {
+		t.Errorf("expected size %d, got %d", cfg.Size, p.Size())
+	}
+	if p.Backlog() != cfg.Backlog {
+		t.Errorf("expected backlog %d, got %d", cfg.Backlog, p.Backlog())
 	}
 }
 
 func TestPoolRunBasic(t *testing.T) {
-	p := New(2, 1)
+	cfg := DefaultConfig
+	cfg.Size = 2
+	p := New(cfg)
 	defer p.Close()
 
 	expectedVal := "success"
@@ -38,7 +44,9 @@ func TestPoolRunBasic(t *testing.T) {
 }
 
 func TestPoolRunError(t *testing.T) {
-	p := New(1, 1)
+	cfg := DefaultConfig
+	cfg.Size = 1
+	p := New(cfg)
 	defer p.Close()
 
 	expectedErr := errors.New("job failed")
@@ -53,7 +61,9 @@ func TestPoolRunError(t *testing.T) {
 }
 
 func TestPoolRunContextCancellation(t *testing.T) {
-	p := New(1, 1)
+	cfg := DefaultConfig
+	cfg.Size = 1
+	p := New(cfg)
 	defer p.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -79,7 +89,9 @@ func TestPoolRunContextCancellation(t *testing.T) {
 }
 
 func TestPoolPanicRecovery(t *testing.T) {
-	p := New(1, 1)
+	cfg := DefaultConfig
+	cfg.Size = 1
+	p := New(cfg)
 	defer p.Close()
 
 	panicMsg := "intentional panic"
@@ -97,7 +109,9 @@ func TestPoolPanicRecovery(t *testing.T) {
 }
 
 func TestPoolClosePreventsNewJobs(t *testing.T) {
-	p := New(1, 1)
+	cfg := DefaultConfig
+	cfg.Size = 1
+	p := New(cfg)
 	p.Close()
 
 	fn := func(ctx context.Context) (any, error) {
@@ -111,7 +125,9 @@ func TestPoolClosePreventsNewJobs(t *testing.T) {
 }
 
 func TestPoolConcurrentRuns(t *testing.T) {
-	p := New(4, 1)
+	cfg := DefaultConfig
+	cfg.Size = 4
+	p := New(cfg)
 	defer p.Close()
 
 	numJobs := 10
@@ -145,4 +161,110 @@ func TestPoolConcurrentRuns(t *testing.T) {
 	for err := range errCh {
 		t.Error(err)
 	}
+}
+
+func TestPoolJobsChExecutesJob(t *testing.T) {
+	cfg := DefaultConfig
+	cfg.Size = 1
+	p := New(cfg)
+	defer p.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	job := p.JobContext(context.Background(), func(ctx context.Context) (any, error) {
+		wg.Done()
+		return nil, nil
+	})
+
+	select {
+	case p.JobsCh() <- job:
+	case <-time.After(50 * time.Millisecond):
+		t.Fatal("timed out sending job to JobsCh")
+	}
+
+	done := make(chan void)
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("timed out waiting for job execution signal")
+	}
+}
+
+func TestPoolJobsChFullBacklog(t *testing.T) {
+	cfg := DefaultConfig
+	cfg.Size = 1
+	cfg.Backlog = 0
+	p := New(cfg)
+	defer p.Close()
+
+	waitCh := make(chan void)
+	blockingFn := func(ctx context.Context) (any, error) {
+		<-waitCh
+		return "done", nil
+	}
+
+	job1 := p.JobContext(context.Background(), blockingFn)
+	select {
+	case p.JobsCh() <- job1:
+	case <-time.After(50 * time.Millisecond):
+		t.Fatal("timed out sending first job to JobsCh")
+	}
+
+	job2 := p.JobContext(
+		context.Background(),
+		func(ctx context.Context) (any, error) {
+			return "second", nil
+		},
+	)
+	select {
+	case p.JobsCh() <- job2:
+		close(waitCh)
+		t.Fatal("sending second job should have blocked due to zero backlog")
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(waitCh)
+}
+
+func TestPoolJobsChCancellationPreventsCompletionSignal(t *testing.T) {
+	cfg := DefaultConfig
+	cfg.Size = 1
+	p := New(cfg)
+	defer p.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	completionSignal := make(chan void, 1)
+
+	job := p.JobContext(ctx, func(ctx context.Context) (any, error) {
+		select {
+		case <-time.After(200 * time.Millisecond):
+			completionSignal <- void{}
+			return "completed", nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	})
+
+	select {
+	case p.JobsCh() <- job:
+	case <-time.After(50 * time.Millisecond):
+		t.Fatal("timed out sending job to JobsCh")
+	}
+
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	time.Sleep(50 * time.Millisecond)
+
+	select {
+	case <-completionSignal:
+		t.Fatal("completion signal received despite context cancellation")
+	default:
+	}
+
+	time.Sleep(250 * time.Millisecond)
 }

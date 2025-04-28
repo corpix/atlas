@@ -5,21 +5,28 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
-	"sync/atomic"
 )
 
 var (
 	ErrClosing = fmt.Errorf("pool is closing")
+
+	DefaultConfig = Config{
+		Size:    runtime.NumCPU(),
+		Backlog: 1,
+	}
 )
 
 type (
 	Pool struct {
-		closeCh  chan void
-		jobs     chan *Job
-		sem      chan void
-		wg       sync.WaitGroup
-		size     int
-		isClosed atomic.Uint32
+		closeCh chan void
+		jobs    chan *Job
+		wg      sync.WaitGroup
+		cfg     Config
+	}
+
+	Config struct {
+		Size    int
+		Backlog int
 	}
 	Job struct {
 		Ctx      context.Context
@@ -37,8 +44,8 @@ type (
 )
 
 func (p *Pool) workersRun() {
-	p.wg.Add(p.size)
-	for range p.size {
+	p.wg.Add(p.cfg.Size)
+	for range p.cfg.Size {
 		go p.worker()
 	}
 }
@@ -58,14 +65,8 @@ func (p *Pool) worker() {
 		select {
 		case <-p.closeCh:
 			return
-		case p.sem <- void{}:
-			select {
-			case <-p.closeCh:
-				return
-			case job := <-p.jobs:
-				p.workerRunJob(job)
-				<-p.sem
-			}
+		case job := <-p.jobs:
+			p.workerRunJob(job)
 		}
 	}
 }
@@ -90,23 +91,22 @@ func (p *Pool) workerRunJob(job *Job) {
 	}
 }
 
-func (p *Pool) RunContext(ctx context.Context, fn Workload) (any, error) {
-	if p.isClosed.Load() == 1 {
-		return nil, ErrClosing
-	}
-
-	job := Job{
+func (p *Pool) JobContext(ctx context.Context, fn Workload) *Job {
+	return &Job{
 		Fn:       fn,
 		Ctx:      ctx,
 		ResultCh: make(chan Result, 1),
 	}
+}
 
+func (p *Pool) RunContext(ctx context.Context, fn Workload) (any, error) {
+	job := p.JobContext(ctx, fn)
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case <-p.closeCh:
 		return nil, ErrClosing
-	case p.jobs <- &job:
+	case p.jobs <- job:
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
@@ -122,29 +122,20 @@ func (p *Pool) Run(fn Workload) (any, error) {
 	return p.RunContext(context.Background(), fn)
 }
 
-func (p *Pool) Size() int { return p.size }
+func (p *Pool) Size() int           { return p.cfg.Size }
+func (p *Pool) Backlog() int        { return p.cfg.Backlog }
+func (p *Pool) JobsCh() chan<- *Job { return p.jobs }
 
 func (p *Pool) Close() {
-	if !p.isClosed.CompareAndSwap(0, 1) {
-		return
-	}
 	close(p.closeCh)
 	p.wg.Wait()
 }
 
-func New(size int, backlog int) *Pool {
-	if size <= 0 {
-		size = runtime.NumCPU()
-	}
-	if backlog <= 0 {
-		backlog = 1
-	}
-
+func New(c Config) *Pool {
 	p := &Pool{
-		size:    size,
+		cfg:     c,
 		closeCh: make(chan void),
-		jobs:    make(chan *Job, backlog),
-		sem:     make(chan void, size),
+		jobs:    make(chan *Job, c.Backlog),
 	}
 	p.workersRun()
 	return p
