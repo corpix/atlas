@@ -52,10 +52,10 @@ type watcherWatch struct {
 	filters  []WatcherFilter
 }
 type Watcher struct {
-	mu      sync.Mutex
 	notify  *fsnotify.Watcher
 	names   map[string][]watcherWatch
 	watches map[string][]watcherWatch
+	mu      sync.Mutex
 }
 
 func (w *Watcher) Watch(name string, cb WatcherCallback, filters ...WatcherFilter) error {
@@ -176,12 +176,12 @@ func New() (*Watcher, error) {
 //
 
 type MultiWatcher struct {
-	mu              sync.Mutex
 	watcher         *Watcher
 	names           map[string]bool
-	filters         []WatcherFilter
 	callback        func()
 	watcherCallback WatcherCallback
+	filters         []WatcherFilter
+	mu              sync.Mutex
 }
 
 type MultiWatcherOption any

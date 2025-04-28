@@ -31,7 +31,7 @@ func NewClient(dsn string, timeout time.Duration) (*Pool, error) {
 }
 
 func WithTxContext[T any](ctx context.Context, dbc *Pool, fn func(Tx) (T, error)) (T, error) {
-	var result  T
+	var result T
 	tx, err := dbc.Begin(ctx)
 	if err != nil {
 		return result, errors.Wrap(err, errors.ErrBeginTx)

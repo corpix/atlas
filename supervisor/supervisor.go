@@ -24,12 +24,12 @@ func (e SupervisorError) Error() string {
 }
 
 type task struct {
-	name      string
-	fn        SupervisorRunFunc
 	ctx       context.Context
+	fn        SupervisorRunFunc
 	cancelCtx context.CancelCauseFunc
 	done      chan void
 	next      *task
+	name      string
 }
 
 func (c *task) cancel(cause error) {
@@ -42,11 +42,11 @@ func (c *task) cancel(cause error) {
 
 type Supervisor struct {
 	context.Context
-	mu     sync.Mutex
 	tasks  *task
-	active int
 	drain  chan void
 	errs   chan error
+	active int
+	mu     sync.Mutex
 }
 
 func (s *Supervisor) Run(name string, fn SupervisorRunFunc) {

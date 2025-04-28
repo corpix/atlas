@@ -23,12 +23,12 @@ func NewStreamSubscription(closeCh chan void, eventsBitmap uint32) *StreamSubscr
 
 type Stream[Channel comparable, Event any] struct {
 	mu                     *sync.Mutex
-	name                   string
 	subscriptionsByChannel map[Channel]map[chan<- Event]*StreamSubscription
 	subscriptionsGlobal    map[chan<- Event]*StreamSubscription
 	source                 <-chan Event
-	identify               func(Event) Channel // extract key to match against subscriptions
-	event                  func(Event) uint32  // extract event, return 0 to match all
+	identify               func(Event) Channel
+	event                  func(Event) uint32
+	name                   string
 }
 
 func (s *Stream[Channel, Event]) ClientPump(clientCh chan Event, sub *StreamSubscription, send func(Event) error) error {

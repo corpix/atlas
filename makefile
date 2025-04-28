@@ -1,6 +1,7 @@
 .DEFAULT_GOAL := all
 
 version = $(shell date +"%Y-%m-%d").$(shell git rev-list --count HEAD)
+pkg := git.tatikoma.dev/corpix/atlas
 
 goverter = goverter gen \
 	-output-constraint '' \
@@ -22,6 +23,7 @@ lint:
 
 .PHONY: fmt
 fmt:
+	fieldalignment -fix $(shell go list -mod=mod all | grep -F $(pkg)) || true
 	go fmt ./...
 
 .PHONY: test

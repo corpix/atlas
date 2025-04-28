@@ -7,9 +7,9 @@ import (
 )
 
 type TLSConfigCertificateManager struct {
-	mu         sync.RWMutex
 	cert       *tls.Certificate
 	clientCert *tls.Certificate
+	mu         sync.RWMutex
 }
 
 func (cm *TLSConfigCertificateManager) GetCertificate(_ *tls.ClientHelloInfo) (*tls.Certificate, error) {
