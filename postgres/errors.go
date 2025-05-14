@@ -25,3 +25,12 @@ func ErrIsConflict(err error) bool {
 	}
 	return false
 }
+
+func ErrIsNoEnumMember(err error) bool {
+	if pgErr, ok := err.(*pgconn.PgError); ok {
+		if pgErr.Code == pgerrcode.InvalidTextRepresentation {
+			return true
+		}
+	}
+	return false
+}
