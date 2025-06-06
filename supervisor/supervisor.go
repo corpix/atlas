@@ -36,6 +36,7 @@ type task struct {
 	cancelCtx context.CancelCauseFunc
 	done      chan void
 	next      *task
+	prev      *task
 	name      string
 	optional  bool
 }
@@ -50,7 +51,7 @@ func (c *task) cancel(cause error) {
 
 type Supervisor struct {
 	context.Context
-	tasks  *task
+	chain  *task
 	drain  chan void
 	errs   chan error
 	active int
@@ -68,16 +69,30 @@ func (s *Supervisor) Run(name string, fn RunFunc, options ...RunOption) {
 		ctx:       ctx,
 		cancelCtx: cancel,
 		done:      make(chan void),
-		next:      s.tasks,
+		next:      s.chain,
 	}
 	for _, option := range options {
 		option(taskNode)
 	}
 
-	s.tasks = taskNode
+	if s.chain != nil {
+		s.chain.prev = taskNode
+	}
+	s.chain = taskNode
 	s.active++
 
 	go s.run(ctx, taskNode)
+}
+
+func (s *Supervisor) remove(t *task) {
+	if t.prev != nil {
+		t.prev.next = t.next
+	} else {
+		s.chain = t.next
+	}
+	if t.next != nil {
+		t.next.prev = t.prev
+	}
 }
 
 func (s *Supervisor) run(ctx context.Context, taskNode *task) {
@@ -87,6 +102,8 @@ func (s *Supervisor) run(ctx context.Context, taskNode *task) {
 
 		s.mu.Lock()
 		defer s.mu.Unlock()
+
+		s.remove(taskNode)
 		s.active--
 
 		if !taskNode.optional || err != nil {
@@ -98,7 +115,7 @@ func (s *Supervisor) run(ctx context.Context, taskNode *task) {
 		}
 
 		if s.active == 0 {
-			s.drain <- void{}
+			close(s.drain)
 		}
 	}()
 
@@ -111,15 +128,11 @@ func (s *Supervisor) run(ctx context.Context, taskNode *task) {
 	}
 }
 
-func (s *Supervisor) Nested(name string, nested *Supervisor) {
+func (s *Supervisor) Nested(name string, nested *Supervisor, options ...RunOption) {
 	s.Run(name, func(ctx context.Context) error {
-		go func() {
-			<-ctx.Done()
-			nested.Cancel()
-		}()
-
+		defer nested.Cancel()
 		return nested.Select(ctx)
-	})
+	}, options...)
 }
 
 func (s *Supervisor) Cancel() {
@@ -132,7 +145,9 @@ func (s *Supervisor) ErrorsChan() <-chan error { return s.errs }
 func (s *Supervisor) Wait()                    { <-s.drain }
 
 func (s *Supervisor) cancel(cause error) {
-	s.tasks.cancel(cause)
+	if s.chain != nil {
+		s.chain.cancel(cause)
+	}
 }
 
 func (s *Supervisor) Select(ctx context.Context) error {
@@ -150,6 +165,6 @@ func New(ctx context.Context) *Supervisor {
 	return &Supervisor{
 		Context: ctx,
 		drain:   make(chan void),
-		errs:    make(chan error),
+		errs:    make(chan error, 1),
 	}
 }

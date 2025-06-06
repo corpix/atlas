@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"go.uber.org/goleak"
 )
 
 func TestSupervisor(t *testing.T) {
@@ -73,10 +75,10 @@ func TestSupervisor(t *testing.T) {
 		ctx := context.Background()
 		sup := New(ctx)
 		tasksCount := 100
-		completed := make([]chan struct{}, tasksCount)
+		completed := make([]chan void, tasksCount)
 
 		for i := range tasksCount {
-			completed[i] = make(chan struct{})
+			completed[i] = make(chan void)
 			sup.Run("task-"+fmt.Sprintf("%d", i), func(ctx context.Context) error {
 				defer close(completed[i])
 				time.Sleep(50 * time.Millisecond)
@@ -106,8 +108,8 @@ func TestSupervisor(t *testing.T) {
 		sup := New(ctx)
 		timeout := 500 * time.Millisecond
 
-		mainTaskRunning := make(chan struct{})
-		mainTaskCanceled := make(chan struct{})
+		mainTaskRunning := make(chan void)
+		mainTaskCanceled := make(chan void)
 
 		sup.Run("main-task", func(ctx context.Context) error {
 			close(mainTaskRunning)
@@ -171,6 +173,55 @@ func TestSupervisor(t *testing.T) {
 			t.Error("timeout waiting for optional task error")
 		}
 	})
+
+	t.Run("multiple optional tasks complete without leaks", func(t *testing.T) {
+		ctx := context.Background()
+		sup := New(ctx)
+		timeout := 200 * time.Millisecond
+
+		persistentTaskDone := make(chan void)
+		sup.Run("persistent-task", func(ctx context.Context) error {
+			<-ctx.Done()
+			close(persistentTaskDone)
+			return nil
+		})
+
+		for i := range 50 {
+			sup.Run(
+				fmt.Sprintf("optional-task-%d", i),
+				func(ctx context.Context) error {
+					return nil
+				},
+				TaskOptional(),
+			)
+		}
+
+		time.Sleep(timeout)
+
+		select {
+		case <-sup.DrainChan():
+			t.Fatal("supervisor drained prematurely")
+		default:
+		}
+
+		sup.Cancel()
+
+		select {
+		case <-persistentTaskDone:
+		case <-time.After(timeout):
+			t.Error("persistent task was not canceled")
+		}
+
+		select {
+		case <-sup.DrainChan():
+		case <-time.After(timeout):
+			t.Error("supervisor did not drain after cleanup")
+		}
+
+		if sup.chain != nil {
+			t.Errorf("some tasks leaked: %+v", *sup.chain)
+		}
+	})
 }
 
 func TestSupervisorNested(t *testing.T) {
@@ -181,7 +232,7 @@ func TestSupervisorNested(t *testing.T) {
 		parent := New(ctx)
 		nested := New(ctx)
 
-		nestedTaskDone := make(chan struct{})
+		nestedTaskDone := make(chan void)
 		nested.Run("nested-task", func(ctx context.Context) error {
 			defer close(nestedTaskDone)
 			time.Sleep(100 * time.Millisecond)
@@ -251,12 +302,70 @@ func TestSupervisorNested(t *testing.T) {
 		}
 	})
 
+	t.Run("optional nested supervisor success does not stop parent", func(t *testing.T) {
+		ctx := context.Background()
+		parent := New(ctx)
+		nested := New(ctx)
+		timeout := 500 * time.Millisecond
+
+		parentTaskRunning := make(chan void)
+		parentTaskCanceled := make(chan void)
+		parent.Run("parent-main-task", func(ctx context.Context) error {
+			close(parentTaskRunning)
+			<-ctx.Done()
+			close(parentTaskCanceled)
+			return nil
+		})
+
+		nestedTaskDone := make(chan void)
+		nested.Run("nested-task", func(ctx context.Context) error {
+			defer close(nestedTaskDone)
+			return nil
+		})
+
+		parent.Nested("optional-nested-supervisor", nested, TaskOptional())
+
+		select {
+		case <-nestedTaskDone:
+		case <-time.After(timeout):
+			t.Fatal("nested task did not complete")
+		}
+
+		select {
+		case <-nested.DrainChan():
+		case <-time.After(timeout):
+			t.Fatal("nested supervisor did not drain")
+		}
+
+		select {
+		case <-parent.DrainChan():
+			t.Fatal("parent supervisor drained prematurely")
+		case err := <-parent.ErrorsChan():
+			t.Fatalf("parent supervisor errored unexpectedly: %v", err)
+		default:
+		}
+
+		parent.Cancel()
+
+		select {
+		case <-parentTaskCanceled:
+		case <-time.After(timeout):
+			t.Fatal("parent main task was not canceled")
+		}
+
+		select {
+		case <-parent.DrainChan():
+		case <-time.After(timeout):
+			t.Fatal("parent supervisor failed to drain after cancellation")
+		}
+	})
+
 	t.Run("parent cancellation propagation", func(t *testing.T) {
 		ctx := context.Background()
 		parent := New(ctx)
 		nested := New(ctx)
 
-		nestedTaskCanceled := make(chan struct{})
+		nestedTaskCanceled := make(chan void)
 		nested.Run("long-task", func(ctx context.Context) error {
 			select {
 			case <-ctx.Done():
@@ -291,7 +400,7 @@ func TestSupervisorNested(t *testing.T) {
 		middle := New(ctx)
 		child := New(ctx)
 
-		taskCompleted := make(chan struct{})
+		taskCompleted := make(chan void)
 		child.Run("deep-task", func(ctx context.Context) error {
 			defer close(taskCompleted)
 			time.Sleep(100 * time.Millisecond)
@@ -338,7 +447,7 @@ func TestSupervisorNested(t *testing.T) {
 			parent.Nested(fmt.Sprintf("nested-supervisor-%d", i), nested)
 		}
 
-		done := make(chan struct{})
+		done := make(chan void)
 		go func() {
 			wg.Wait()
 			close(done)
@@ -358,4 +467,8 @@ func TestSupervisorNested(t *testing.T) {
 			t.Error("parent failed to drain")
 		}
 	})
+}
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
 }

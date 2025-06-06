@@ -29,6 +29,7 @@ require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
+	go.uber.org/goleak v1.3.0 // indirect
 	golang.org/x/crypto v0.28.0 // indirect
 	golang.org/x/net v0.30.0 // indirect
 	golang.org/x/sync v0.8.0 // indirect
