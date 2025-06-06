@@ -9,27 +9,35 @@ import (
 type (
 	void = struct{}
 
-	SupervisorClosing  void
-	SupervisorCanceled void
-	SupervisorError    struct {
+	Closing  void
+	Canceled void
+	Error    struct {
 		Err  error
 		name string
 	}
-	SupervisorRunFunc func(ctx context.Context) error
+	RunFunc   func(ctx context.Context) error
+	RunOption func(t *task)
 )
 
-func (SupervisorCanceled) Error() string { return "canceled" }
-func (e SupervisorError) Error() string {
+func (Canceled) Error() string { return "canceled" }
+func (e Error) Error() string {
 	return fmt.Sprintf("task %q failed: %s", e.name, e.Err.Error())
+}
+
+func TaskOptional() RunOption {
+	return func(t *task) {
+		t.optional = true
+	}
 }
 
 type task struct {
 	ctx       context.Context
-	fn        SupervisorRunFunc
+	fn        RunFunc
 	cancelCtx context.CancelCauseFunc
 	done      chan void
 	next      *task
 	name      string
+	optional  bool
 }
 
 func (c *task) cancel(cause error) {
@@ -49,7 +57,7 @@ type Supervisor struct {
 	mu     sync.Mutex
 }
 
-func (s *Supervisor) Run(name string, fn SupervisorRunFunc) {
+func (s *Supervisor) Run(name string, fn RunFunc, options ...RunOption) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -62,6 +70,9 @@ func (s *Supervisor) Run(name string, fn SupervisorRunFunc) {
 		done:      make(chan void),
 		next:      s.tasks,
 	}
+	for _, option := range options {
+		option(taskNode)
+	}
 
 	s.tasks = taskNode
 	s.active++
@@ -70,6 +81,7 @@ func (s *Supervisor) Run(name string, fn SupervisorRunFunc) {
 }
 
 func (s *Supervisor) run(ctx context.Context, taskNode *task) {
+	var err error
 	defer func() {
 		close(taskNode.done)
 
@@ -77,16 +89,22 @@ func (s *Supervisor) run(ctx context.Context, taskNode *task) {
 		defer s.mu.Unlock()
 		s.active--
 
-		s.cancel(context.Cause(ctx))
+		if !taskNode.optional || err != nil {
+			cause := err
+			if cause == nil {
+				cause = context.Cause(ctx)
+			}
+			s.cancel(cause)
+		}
 
 		if s.active == 0 {
 			s.drain <- void{}
 		}
 	}()
 
-	err := taskNode.fn(ctx)
+	err = taskNode.fn(ctx)
 	if err != nil {
-		s.errs <- SupervisorError{
+		s.errs <- Error{
 			Err:  err,
 			name: taskNode.name,
 		}
@@ -107,7 +125,7 @@ func (s *Supervisor) Nested(name string, nested *Supervisor) {
 func (s *Supervisor) Cancel() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.cancel(SupervisorCanceled{})
+	s.cancel(Canceled{})
 }
 func (s *Supervisor) DrainChan() <-chan void   { return s.drain }
 func (s *Supervisor) ErrorsChan() <-chan error { return s.errs }

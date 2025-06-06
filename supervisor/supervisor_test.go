@@ -48,7 +48,7 @@ func TestSupervisor(t *testing.T) {
 
 		select {
 		case err := <-sup.ErrorsChan():
-			if supErr, ok := err.(SupervisorError); !ok {
+			if supErr, ok := err.(Error); !ok {
 				t.Errorf("expected SupervisorError, got %T", err)
 			} else if supErr.name != "error-task" {
 				t.Errorf("expected task name 'error-task', got %q", supErr.name)
@@ -98,6 +98,77 @@ func TestSupervisor(t *testing.T) {
 			t.Errorf("unexpected error: %v", err)
 		case <-time.After(timeout):
 			t.Error("supervisor failed to drain")
+		}
+	})
+
+	t.Run("optional task success does not stop supervisor", func(t *testing.T) {
+		ctx := context.Background()
+		sup := New(ctx)
+		timeout := 500 * time.Millisecond
+
+		mainTaskRunning := make(chan struct{})
+		mainTaskCanceled := make(chan struct{})
+
+		sup.Run("main-task", func(ctx context.Context) error {
+			close(mainTaskRunning)
+			<-ctx.Done()
+			close(mainTaskCanceled)
+			return nil
+		})
+
+		sup.Run("optional-task", func(ctx context.Context) error {
+			return nil
+		}, TaskOptional())
+
+		select {
+		case <-mainTaskRunning:
+		case <-time.After(timeout):
+			t.Fatal("main task did not start")
+		}
+
+		time.Sleep(100 * time.Millisecond)
+
+		select {
+		case <-sup.DrainChan():
+			t.Fatal("supervisor drained prematurely")
+		case err := <-sup.ErrorsChan():
+			t.Fatalf("supervisor errored unexpectedly: %v", err)
+		default:
+		}
+
+		sup.Cancel()
+
+		select {
+		case <-mainTaskCanceled:
+		case <-time.After(timeout):
+			t.Fatal("main task was not canceled")
+		}
+
+		select {
+		case <-sup.DrainChan():
+		case <-time.After(timeout):
+			t.Error("supervisor failed to drain after cancellation")
+		}
+	})
+
+	t.Run("optional task failure stops supervisor", func(t *testing.T) {
+		ctx := context.Background()
+		sup := New(ctx)
+		expectedErr := errors.New("optional task failed")
+
+		sup.Run("optional-task-fail", func(ctx context.Context) error {
+			return expectedErr
+		}, TaskOptional())
+
+		select {
+		case err := <-sup.ErrorsChan():
+			if supErr, ok := err.(Error); !ok {
+				t.Errorf("expected Error, got %T", err)
+			} else if !errors.Is(supErr.Err, expectedErr) {
+				t.Errorf("expected error %v, got %v", expectedErr, supErr.Err)
+			}
+		case <-time.After(timeout):
+			t.Error("timeout waiting for optional task error")
 		}
 	})
 }
@@ -154,7 +225,7 @@ func TestSupervisorNested(t *testing.T) {
 			t.Fatal("timeout waiting for error")
 		}
 
-		supErr, ok := err.(SupervisorError)
+		supErr, ok := err.(Error)
 		if !ok {
 			t.Fatalf("expected SupervisorError, got %T", err)
 		}
@@ -162,7 +233,7 @@ func TestSupervisorNested(t *testing.T) {
 			t.Errorf("expected task name 'nested-supervisor', got %q", supErr.name)
 		}
 
-		nestedSupErr, ok := supErr.Err.(SupervisorError)
+		nestedSupErr, ok := supErr.Err.(Error)
 		if !ok {
 			t.Fatalf("expected nested SupervisorError, got %T", supErr.Err)
 		}
