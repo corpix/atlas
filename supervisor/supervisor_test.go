@@ -103,6 +103,37 @@ func TestSupervisor(t *testing.T) {
 		}
 	})
 
+	t.Run("cancel waits for all tasks to complete", func(t *testing.T) {
+		ctx := context.Background()
+		sup := New(ctx)
+		taskCount := 5
+		allTasksDone := make([]chan struct{}, taskCount)
+
+		for i := range taskCount {
+			allTasksDone[i] = make(chan struct{})
+			sup.Run(fmt.Sprintf("wait-task-%d", i), func(ctx context.Context) error {
+				<-ctx.Done()
+				close(allTasksDone[i])
+				return nil
+			})
+		}
+
+		time.Sleep(50 * time.Millisecond)
+		sup.Cancel()
+
+		for _, doneChan := range allTasksDone {
+			select {
+			case <-doneChan:
+			}
+		}
+
+		select {
+		case <-sup.DrainChan():
+		case <-time.After(timeout):
+			t.Error("supervisor failed to drain after cancellation")
+		}
+	})
+
 	t.Run("optional task success does not stop supervisor", func(t *testing.T) {
 		ctx := context.Background()
 		sup := New(ctx)
@@ -391,6 +422,38 @@ func TestSupervisorNested(t *testing.T) {
 		case <-parent.DrainChan():
 		case <-time.After(timeout):
 			t.Error("parent failed to drain after cancellation")
+		}
+	})
+
+	t.Run("concurrent cancellation does not deadlock", func(t *testing.T) {
+		ctx := context.Background()
+		parent := New(ctx)
+		nested := New(ctx)
+
+		parent.Run("waiter", func(ctx context.Context) error {
+			<-ctx.Done()
+			return nil
+		})
+
+		parent.Nested("nested-supervisor", nested)
+
+		done := make(chan void)
+		go func() {
+			defer close(done)
+			parent.Cancel()
+			parent.Cancel()
+			parent.Cancel()
+		}()
+
+		select {
+		case <-done:
+			select {
+			case <-parent.DrainChan():
+			case <-time.After(timeout):
+				t.Error("parent failed to drain after cancellation")
+			}
+		case <-time.After(timeout):
+			t.Error("supervisor deadlocked and failed to drain")
 		}
 	})
 

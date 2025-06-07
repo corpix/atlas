@@ -31,45 +31,36 @@ func TaskOptional() RunOption {
 }
 
 type task struct {
-	ctx       context.Context
-	fn        RunFunc
-	cancelCtx context.CancelCauseFunc
-	done      chan void
-	next      *task
-	prev      *task
-	name      string
-	optional  bool
-}
-
-func (c *task) cancel(cause error) {
-	c.cancelCtx(cause)
-	<-c.done
-	if c.next != nil {
-		c.next.cancel(cause)
-	}
+	ctx      context.Context
+	fn       RunFunc
+	done     chan void
+	next     *task
+	prev     *task
+	name     string
+	optional bool
 }
 
 type Supervisor struct {
 	context.Context
-	chain  *task
-	drain  chan void
-	errs   chan error
-	active int
-	mu     sync.Mutex
+	cancelCtx context.CancelCauseFunc
+	chain     *task
+	drain     chan void
+	errs      chan error
+	active    int
+	mu        sync.Mutex
 }
 
 func (s *Supervisor) Run(name string, fn RunFunc, options ...RunOption) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	ctx, cancel := context.WithCancelCause(s.Context)
+	ctx := s.Context
 	taskNode := &task{
-		name:      name,
-		fn:        fn,
-		ctx:       ctx,
-		cancelCtx: cancel,
-		done:      make(chan void),
-		next:      s.chain,
+		name: name,
+		fn:   fn,
+		ctx:  ctx,
+		done: make(chan void),
+		next: s.chain,
 	}
 	for _, option := range options {
 		option(taskNode)
@@ -82,17 +73,6 @@ func (s *Supervisor) Run(name string, fn RunFunc, options ...RunOption) {
 	s.active++
 
 	go s.run(ctx, taskNode)
-}
-
-func (s *Supervisor) remove(t *task) {
-	if t.prev != nil {
-		t.prev.next = t.next
-	} else {
-		s.chain = t.next
-	}
-	if t.next != nil {
-		t.next.prev = t.prev
-	}
 }
 
 func (s *Supervisor) run(ctx context.Context, taskNode *task) {
@@ -128,6 +108,17 @@ func (s *Supervisor) run(ctx context.Context, taskNode *task) {
 	}
 }
 
+func (s *Supervisor) remove(t *task) {
+	if t.prev != nil {
+		t.prev.next = t.next
+	} else {
+		s.chain = t.next
+	}
+	if t.next != nil {
+		t.next.prev = t.prev
+	}
+}
+
 func (s *Supervisor) Nested(name string, nested *Supervisor, options ...RunOption) {
 	s.Run(name, func(ctx context.Context) error {
 		defer nested.Cancel()
@@ -136,8 +127,6 @@ func (s *Supervisor) Nested(name string, nested *Supervisor, options ...RunOptio
 }
 
 func (s *Supervisor) Cancel() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.cancel(Canceled{})
 }
 func (s *Supervisor) DrainChan() <-chan void   { return s.drain }
@@ -145,9 +134,7 @@ func (s *Supervisor) ErrorsChan() <-chan error { return s.errs }
 func (s *Supervisor) Wait()                    { <-s.drain }
 
 func (s *Supervisor) cancel(cause error) {
-	if s.chain != nil {
-		s.chain.cancel(cause)
-	}
+	s.cancelCtx(cause)
 }
 
 func (s *Supervisor) Select(ctx context.Context) error {
@@ -162,9 +149,11 @@ func (s *Supervisor) Select(ctx context.Context) error {
 }
 
 func New(ctx context.Context) *Supervisor {
+	innerCtx, cancel := context.WithCancelCause(ctx)
 	return &Supervisor{
-		Context: ctx,
-		drain:   make(chan void),
-		errs:    make(chan error, 1),
+		Context:   innerCtx,
+		cancelCtx: cancel,
+		drain:     make(chan void),
+		errs:      make(chan error, 1),
 	}
 }
