@@ -7,8 +7,8 @@ import (
 type Set[K comparable, V any] struct {
 	id func(V) K
 	kv map[K]V
-	v  []V
 	vn map[K]int
+	v  []V
 }
 
 func (st *Set[K, V]) Add(ts ...V) {

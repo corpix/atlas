@@ -10,8 +10,8 @@ func TestBatches(t *testing.T) {
 	testCases := []struct {
 		name      string
 		items     []int
-		batchSize int
 		expected  [][]int
+		batchSize int
 	}{
 		{
 			name:      "Evenly divisible",

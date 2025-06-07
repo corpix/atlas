@@ -7,8 +7,8 @@ import (
 )
 
 type setTestItem struct {
-	ID   int
 	Data string
+	ID   int
 }
 
 func setTestItemID(i setTestItem) int {
