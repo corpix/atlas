@@ -54,6 +54,10 @@ func (st *Set[K, V]) iter(yield func(V) bool) {
 	}
 }
 
+func (st *Set[K, V]) Len() int {
+	return len(st.v)
+}
+
 func (st *Set[K, V]) Iter() iter.Seq[V] {
 	return st.iter
 }
