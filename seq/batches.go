@@ -1,4 +1,4 @@
-package iter
+package seq
 
 // Batches returns an iterator that yields batches of items from a slice.
 func Batches[T any](items []T, batchSize int) func(yield func([]T) bool) {
