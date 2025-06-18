@@ -122,9 +122,7 @@ func TestSupervisor(t *testing.T) {
 		sup.Cancel()
 
 		for _, doneChan := range allTasksDone {
-			select {
-			case <-doneChan:
-			}
+			<-doneChan
 		}
 
 		select {
