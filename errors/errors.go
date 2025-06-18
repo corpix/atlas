@@ -30,6 +30,10 @@ func Log(err error, fmt string, args ...any) {
 	}
 }
 
+func LogCall(fn func() error, fmt string, args ...any) {
+	Log(fn(), fmt, args...)
+}
+
 func Chain(err error, cause error) error {
 	return Errorf("%w: %w", err, cause)
 }
