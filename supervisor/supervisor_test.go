@@ -389,6 +389,54 @@ func TestSupervisorNested(t *testing.T) {
 		}
 	})
 
+	t.Run("optional nested supervisor error propagation", func(t *testing.T) {
+		ctx := context.Background()
+		parent := New(ctx)
+		nested := New(ctx)
+		timeout := 500 * time.Millisecond
+		raise := make(chan void)
+
+		expectedErr := errors.New("optional nested task failed")
+
+		nested.Run("failing-task", func(ctx context.Context) error {
+			<-raise
+			return expectedErr
+		})
+
+		parent.Nested("optional-nested-supervisor", nested, TaskOptional())
+
+		close(raise)
+		select {
+		case err := <-parent.ErrorsChan():
+			supErr, ok := err.(Error)
+			if !ok {
+				t.Fatalf("expected SupervisorError, got %T", err)
+			}
+			if supErr.name != "optional-nested-supervisor" {
+				t.Errorf("expected task name 'optional-nested-supervisor', got %q", supErr.name)
+			}
+
+			nestedSupErr, ok := supErr.Err.(Error)
+			if !ok {
+				t.Fatalf("expected nested SupervisorError, got %T", supErr.Err)
+			}
+			if nestedSupErr.name != "failing-task" {
+				t.Errorf("expected nested task name 'failing-task', got %q", nestedSupErr.name)
+			}
+			if !errors.Is(nestedSupErr.Err, expectedErr) {
+				t.Errorf("expected error %v, got %v", expectedErr, nestedSupErr.Err)
+			}
+		case <-time.After(timeout):
+			t.Fatal("parent supervisor did not receive error from optional nested supervisor")
+		}
+
+		select {
+		case <-parent.DrainChan():
+		case <-time.After(timeout):
+			t.Fatal("parent supervisor failed to drain after optional nested error")
+		}
+	})
+
 	t.Run("parent cancellation propagation", func(t *testing.T) {
 		ctx := context.Background()
 		parent := New(ctx)
