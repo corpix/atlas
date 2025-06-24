@@ -30,7 +30,7 @@ func Log(err error, fmt string, args ...any) {
 	}
 }
 
-func LogCall(fn func() error, fmt string, args ...any) {
+func LogCallErr(fn func() error, fmt string, args ...any) {
 	Log(fn(), fmt, args...)
 }
 
