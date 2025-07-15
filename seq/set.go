@@ -42,6 +42,11 @@ func (st *Set[K, V]) Del(id K) bool {
 	return true
 }
 
+func (st *Set[K, V]) Has(id K) bool {
+	_, ok := st.vn[id]
+	return ok
+}
+
 func (st *Set[K, V]) Get(id K) V {
 	return st.kv[id]
 }
