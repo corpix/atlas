@@ -95,6 +95,9 @@ func (s *Supervisor) run(ctx context.Context, taskNode *task) {
 		}
 
 		if s.active == 0 {
+			// fixme: what if we would have only optional tasks?
+			// this will panic
+			// https://git.tatikoma.dev/corpix/atlas/issues/4
 			close(s.drain)
 		}
 	}()
