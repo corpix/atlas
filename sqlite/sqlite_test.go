@@ -2,7 +2,7 @@ package sqlite
 
 import (
 	"context"
-	"path/filepath"
+	"fmt"
 	"testing"
 	"time"
 
@@ -14,10 +14,7 @@ func TestClient(t *testing.T) {
 	require := require.New(t)
 	ctx := context.Background()
 
-	tmpDir := t.TempDir()
-	dbPath := filepath.Join(tmpDir, "test.db")
-
-	db, err := NewClient(dbPath, 5*time.Second)
+	db, err := NewClient(":memory:", 5*time.Second)
 	require.NoError(err)
 	require.NotNil(db)
 	defer func() {
@@ -46,10 +43,7 @@ func TestClientTx(t *testing.T) {
 	require := require.New(t)
 	ctx := context.Background()
 
-	tmpDir := t.TempDir()
-	dbPath := filepath.Join(tmpDir, "tx_test.db")
-
-	db, err := NewClient(dbPath, 5*time.Second)
+	db, err := NewClient(":memory:", 5*time.Second)
 	require.NoError(err)
 	require.NotNil(db)
 	defer func() {
@@ -71,4 +65,57 @@ func TestClientTx(t *testing.T) {
 	err = db.QueryRowContext(ctx, `SELECT name FROM tx_items WHERE name = ?`, simpleData).Scan(&retrievedName)
 	require.NoError(err)
 	require.Equal(simpleData, retrievedName)
+}
+
+func TestClientTxRollback(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := context.Background()
+
+	db, err := NewClient(":memory:", 5*time.Second)
+	require.NoError(err)
+	require.NotNil(db)
+	defer func() {
+		closeErr := db.Close()
+		assert.NoError(closeErr)
+	}()
+
+	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS rollback_items (id INTEGER PRIMARY KEY AUTOINCREMENT, value TEXT NOT NULL)`)
+	require.NoError(err)
+
+	t.Run("Rollback on function error", func(t *testing.T) {
+		dataToInsert := "data-should-not-be-committed-error"
+		expectedErr := "simulated error"
+
+		_, txErr := WithTxContext(ctx, db, func(tx *Tx) (any, error) {
+			_, insertErr := tx.ExecContext(ctx, `INSERT INTO rollback_items (value) VALUES (?)`, dataToInsert)
+			require.NoError(insertErr, "Insert should succeed within the transaction")
+			return nil, fmt.Errorf(expectedErr)
+		})
+
+		assert.ErrorContains(txErr, expectedErr, "WithTxContext should return the error from the function")
+
+		var count int
+		err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM rollback_items WHERE value = ?`, dataToInsert).Scan(&count)
+		require.NoError(err, "Failed to query count after rollback attempt")
+		assert.Zero(count, "Data should not be committed after function returns an error")
+	})
+
+	t.Run("Rollback on function panic", func(t *testing.T) {
+		dataToInsert := "data-should-not-be-committed-panic"
+		panicMessage := "simulated panic"
+
+		assert.Panics(func() {
+			_, _ = WithTxContext(ctx, db, func(tx *Tx) (any, error) {
+				_, insertErr := tx.ExecContext(ctx, `INSERT INTO rollback_items (value) VALUES (?)`, dataToInsert)
+				require.NoError(insertErr, "Insert should succeed within the transaction")
+				panic(panicMessage)
+			})
+		}, "WithTxContext should re-panic with the original panic message")
+
+		var count int
+		err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM rollback_items WHERE value = ?`, dataToInsert).Scan(&count)
+		require.NoError(err, "Failed to query count after panic rollback attempt")
+		assert.Zero(count, "Data should not be committed after function panics")
+	})
 }
