@@ -2,13 +2,13 @@ package postgres
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
 	"github.com/pashagolub/pgxmock/v4"
+
+	"git.tatikoma.dev/corpix/atlas/errors"
 )
 
 func TestClientTxRollback(t *testing.T) {
@@ -33,7 +33,7 @@ func TestClientTxRollback(t *testing.T) {
 		_, txErr := WithTxContext(ctx, mockPool, func(tx Tx) (any, error) {
 			_, insertErr := tx.Exec(ctx, `INSERT INTO items (value) VALUES ($1)`, dataToInsert)
 			require.NoError(insertErr, "Insert should succeed within the mock transaction")
-			return nil, fmt.Errorf(expectedErr)
+			return nil, errors.New(expectedErr)
 		})
 
 		assert.ErrorContains(txErr, expectedErr, "WithTxContext should return the error from the function")

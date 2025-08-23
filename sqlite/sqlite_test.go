@@ -2,12 +2,13 @@ package sqlite
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"git.tatikoma.dev/corpix/atlas/errors"
 )
 
 func TestClient(t *testing.T) {
@@ -90,7 +91,7 @@ func TestClientTxRollback(t *testing.T) {
 		_, txErr := WithTxContext(ctx, db, func(tx *Tx) (any, error) {
 			_, insertErr := tx.ExecContext(ctx, `INSERT INTO rollback_items (value) VALUES (?)`, dataToInsert)
 			require.NoError(insertErr, "Insert should succeed within the transaction")
-			return nil, fmt.Errorf(expectedErr)
+			return nil, errors.New(expectedErr)
 		})
 
 		assert.ErrorContains(txErr, expectedErr, "WithTxContext should return the error from the function")

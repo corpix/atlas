@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"runtime/debug"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -63,11 +62,9 @@ func WithTxContext[T any](ctx context.Context, db *DB, fn func(tx *Tx) (T, error
 	defer func() {
 		// closure is required to capture err value after execution of fn
 		if panicErr := recover(); panicErr != nil {
-			// note: this will catch panic, get current stack, rollback tx, re-panic printing original stack
-			// fixme: could this be better? (printing original stack is kinda dirty solution)
-			stack := debug.Stack()
-			_ = EndTxContext(ctx, tx, fmt.Errorf("%v", panicErr))
-			panic("Original stack: " + string(stack) + "\n\n" + fmt.Sprintf("%v", panicErr))
+			panicStr := fmt.Errorf("%v", panicErr)
+			_ = EndTxContext(ctx, tx, panicStr)
+			panic(panicStr)
 		} else {
 			_ = EndTxContext(ctx, tx, err)
 		}
