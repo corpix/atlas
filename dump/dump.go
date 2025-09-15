@@ -6,6 +6,7 @@ import (
 
 var dumper = spew.ConfigState{
 	SortKeys: true,
+	Indent:   "  ",
 }
 
 func Print(xs ...any) {
