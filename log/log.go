@@ -16,6 +16,8 @@ type (
 	Event   = *zerolog.Event
 )
 
+var DefaultLogger *Logger
+
 var (
 	DebugLevel = zerolog.DebugLevel
 	InfoLevel  = zerolog.InfoLevel
@@ -49,6 +51,7 @@ func init() {
 	})
 
 	zerolog.DefaultContextLogger = &log.Logger
+	DefaultLogger = &log.Logger
 
 	stdlog.SetFlags(0)
 	stdlog.SetOutput(log.Logger)
