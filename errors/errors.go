@@ -1,6 +1,7 @@
 package errors
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/pkg/errors"
@@ -30,8 +31,18 @@ func Log(err error, fmt string, args ...any) {
 	}
 }
 
+func LogCtx(ctx context.Context, err error, fmt string, args ...any) {
+	if err != nil {
+		log.Ctx(ctx).Error().Err(err).Msgf(fmt, args...)
+	}
+}
+
 func LogCallErr(fn func() error, fmt string, args ...any) {
 	Log(fn(), fmt, args...)
+}
+
+func LogCallErrCtx(ctx context.Context, fn func() error, fmt string, args ...any) {
+	LogCtx(ctx, fn(), fmt, args...)
 }
 
 func Chain(err error, cause error) error {
@@ -44,6 +55,15 @@ func RpcCode(err error, code codes.Code, fmt string, args ...any) error {
 	}
 
 	log.Error().Err(err).Msgf(fmt, args...)
+	return status.Errorf(code, fmt, args...)
+}
+
+func RpcCodeCtx(ctx context.Context, err error, code codes.Code, fmt string, args ...any) error {
+	if err == nil {
+		return nil
+	}
+
+	log.Ctx(ctx).Error().Err(err).Msgf(fmt, args...)
 	return status.Errorf(code, fmt, args...)
 }
 
