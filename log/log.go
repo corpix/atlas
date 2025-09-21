@@ -17,6 +17,17 @@ type (
 )
 
 var (
+	DebugLevel = zerolog.DebugLevel
+	InfoLevel  = zerolog.InfoLevel
+	WarnLevel  = zerolog.WarnLevel
+	ErrorLevel = zerolog.ErrorLevel
+	FatalLevel = zerolog.FatalLevel
+	PanicLevel = zerolog.PanicLevel
+
+	SetLevel = zerolog.SetGlobalLevel
+)
+
+var (
 	Err       = log.Err
 	Trace     = log.Trace
 	Debug     = log.Debug
