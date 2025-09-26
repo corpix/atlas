@@ -61,9 +61,7 @@ type Group struct {
 	tasks     *Task
 	mounts    map[*Group]void
 	wg        sync.WaitGroup
-	drain     chan void
 	errs      chan error
-	active    int
 	mu        sync.Mutex
 }
 
