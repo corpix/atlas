@@ -11,7 +11,7 @@ import (
 	"go.uber.org/goleak"
 )
 
-func TestSupervisor(t *testing.T) {
+func TestGroup(t *testing.T) {
 	timeout := 1 * time.Second
 	t.Run("basic task execution", func(t *testing.T) {
 		ctx := context.Background()
@@ -51,7 +51,7 @@ func TestSupervisor(t *testing.T) {
 		select {
 		case err := <-sup.ErrorsCh():
 			if supErr, ok := err.(Error); !ok {
-				t.Errorf("expected SupervisorError, got %T", err)
+				t.Errorf("expected %T, got %T", Error{}, err)
 			} else if supErr.name != "error-task" {
 				t.Errorf("expected task name 'error-task', got %q", supErr.name)
 			} else if !errors.Is(supErr.Err, expectedErr) {
@@ -132,7 +132,7 @@ func TestSupervisor(t *testing.T) {
 		}
 	})
 
-	t.Run("optional task success does not stop supervisor", func(t *testing.T) {
+	t.Run("weak task success does not stop supervisor", func(t *testing.T) {
 		ctx := context.Background()
 		sup := New(ctx)
 		timeout := 500 * time.Millisecond
@@ -149,7 +149,7 @@ func TestSupervisor(t *testing.T) {
 
 		sup.Run(func(ctx context.Context) error {
 			return nil
-		}, TaskName("optional-task"), TaskOptional())
+		}, TaskName("weak-task"), TaskWeak())
 
 		select {
 		case <-mainTaskRunning:
@@ -182,34 +182,47 @@ func TestSupervisor(t *testing.T) {
 		}
 	})
 
-	t.Run("optional task failure stops supervisor", func(t *testing.T) {
+	t.Run("weak task failure stops supervisor", func(t *testing.T) {
 		ctx := context.Background()
 		sup := New(ctx)
-		expectedErr := errors.New("optional task failed")
+		expectedErr := errors.New("weak task failed")
 
 		sup.Run(func(ctx context.Context) error {
 			return expectedErr
-		}, TaskName("optional-task-fail"), TaskOptional())
+		}, TaskName("weak-task-fail"), TaskWeak())
 
 		select {
 		case err := <-sup.ErrorsCh():
 			if supErr, ok := err.(Error); !ok {
-				t.Errorf("expected Error, got %T", err)
+				t.Errorf("expected %T, got %T", Error{}, err)
 			} else if !errors.Is(supErr.Err, expectedErr) {
 				t.Errorf("expected error %v, got %v", expectedErr, supErr.Err)
 			}
 		case <-time.After(timeout):
-			t.Error("timeout waiting for optional task error")
+			t.Error("timeout waiting for weak task error")
 		}
 	})
 
-	t.Run("all tasks optional", func(t *testing.T) {
+	t.Run("all tasks weak", func(t *testing.T) {
 		ctx := context.Background()
 		sup := New(ctx)
 
 		sup.Run(func(ctx context.Context) error {
 			return nil
-		}, TaskName("optional-task"), TaskOptional())
+		}, TaskName("weak-task"), TaskWeak())
+
+		select {
+		case err := <-sup.ErrorsCh():
+			t.Error(err)
+		case <-sup.DrainCh():
+		case <-time.After(timeout):
+			t.Error("timeout")
+		}
+
+		// note: https://git.tatikoma.dev/corpix/atlas/issues/4
+		sup.Run(func(ctx context.Context) error {
+			return nil
+		}, TaskName("weak-task"), TaskWeak())
 
 		select {
 		case err := <-sup.ErrorsCh():
@@ -220,28 +233,28 @@ func TestSupervisor(t *testing.T) {
 		}
 	})
 
-	t.Run("optional task failure stops supervisor", func(t *testing.T) {
+	t.Run("weak task failure stops supervisor", func(t *testing.T) {
 		ctx := context.Background()
 		sup := New(ctx)
-		expectedErr := errors.New("optional task failed")
+		expectedErr := errors.New("weak task failed")
 
 		sup.Run(func(ctx context.Context) error {
 			return expectedErr
-		}, TaskName("optional-task-fail"), TaskOptional())
+		}, TaskName("weak-task-fail"), TaskWeak())
 
 		select {
 		case err := <-sup.ErrorsCh():
 			if supErr, ok := err.(Error); !ok {
-				t.Errorf("expected Error, got %T", err)
+				t.Errorf("expected %T, got %T", Error{}, err)
 			} else if !errors.Is(supErr.Err, expectedErr) {
 				t.Errorf("expected error %v, got %v", expectedErr, supErr.Err)
 			}
 		case <-time.After(timeout):
-			t.Error("timeout waiting for optional task error")
+			t.Error("timeout waiting for weak task error")
 		}
 	})
 
-	t.Run("multiple optional tasks complete without leaks", func(t *testing.T) {
+	t.Run("multiple weak tasks complete without leaks", func(t *testing.T) {
 		ctx := context.Background()
 		sup := New(ctx)
 		timeout := 200 * time.Millisecond
@@ -256,8 +269,8 @@ func TestSupervisor(t *testing.T) {
 		for i := range 50 {
 			sup.Run(
 				func(ctx context.Context) error { return nil },
-				TaskName(fmt.Sprintf("optional-task-%d", i)),
-				TaskOptional(),
+				TaskName(fmt.Sprintf("weak-task-%d", i)),
+				TaskWeak(),
 			)
 		}
 
@@ -289,7 +302,7 @@ func TestSupervisor(t *testing.T) {
 	})
 }
 
-func TestSupervisorMount(t *testing.T) {
+func TestGroupMount(t *testing.T) {
 	timeout := 1 * time.Second
 
 	t.Run("mount supervisor success", func(t *testing.T) {
@@ -343,7 +356,7 @@ func TestSupervisorMount(t *testing.T) {
 
 		supErr, ok := err.(Error)
 		if !ok {
-			t.Fatalf("expected SupervisorError, got %T", err)
+			t.Fatalf("expected %T, got %T", Error{}, err)
 		}
 		if supErr.name != "nested-supervisor" {
 			t.Errorf("expected task name 'nested-supervisor', got %q", supErr.name)
@@ -351,7 +364,7 @@ func TestSupervisorMount(t *testing.T) {
 
 		nestedSupErr, ok := supErr.Err.(Error)
 		if !ok {
-			t.Fatalf("expected nested SupervisorError, got %T", supErr.Err)
+			t.Fatalf("expected nested %T, got %T", Error{}, supErr.Err)
 		}
 		if nestedSupErr.name != "error-task" {
 			t.Errorf("expected nested task name 'error-task', got %q", nestedSupErr.name)
@@ -367,7 +380,7 @@ func TestSupervisorMount(t *testing.T) {
 		}
 	})
 
-	t.Run("optional nested supervisor success does not stop parent", func(t *testing.T) {
+	t.Run("weak nested supervisor success does not stop parent", func(t *testing.T) {
 		ctx := context.Background()
 		parent := New(ctx)
 		nested := New(ctx)
@@ -388,7 +401,7 @@ func TestSupervisorMount(t *testing.T) {
 			return nil
 		}, TaskName("nested-task"))
 
-		parent.Mount(nested, TaskName("optional-nested-supervisor"), TaskOptional())
+		parent.Mount(nested, TaskName("weak-nested-supervisor"), TaskWeak())
 
 		select {
 		case <-nestedTaskDone:
@@ -425,36 +438,36 @@ func TestSupervisorMount(t *testing.T) {
 		}
 	})
 
-	t.Run("optional nested supervisor error propagation", func(t *testing.T) {
+	t.Run("weak nested supervisor error propagation", func(t *testing.T) {
 		ctx := context.Background()
 		parent := New(ctx)
 		nested := New(ctx)
 		timeout := 500 * time.Millisecond
 		raise := make(chan void)
 
-		expectedErr := errors.New("optional nested task failed")
+		expectedErr := errors.New("weak nested task failed")
 
 		nested.Run(func(ctx context.Context) error {
 			<-raise
 			return expectedErr
 		}, TaskName("failing-task"))
 
-		parent.Mount(nested, TaskName("optional-nested-supervisor"), TaskOptional())
+		parent.Mount(nested, TaskName("weak-nested-supervisor"), TaskWeak())
 
 		close(raise)
 		select {
 		case err := <-parent.ErrorsCh():
 			supErr, ok := err.(Error)
 			if !ok {
-				t.Fatalf("expected SupervisorError, got %T", err)
+				t.Fatalf("expected %T, got %T", Error{}, err)
 			}
-			if supErr.name != "optional-nested-supervisor" {
-				t.Errorf("expected task name 'optional-nested-supervisor', got %q", supErr.name)
+			if supErr.name != "weak-nested-supervisor" {
+				t.Errorf("expected task name 'weak-nested-supervisor', got %q", supErr.name)
 			}
 
 			nestedSupErr, ok := supErr.Err.(Error)
 			if !ok {
-				t.Fatalf("expected nested SupervisorError, got %T", supErr.Err)
+				t.Fatalf("expected nested %T, got %T", Error{}, supErr.Err)
 			}
 			if nestedSupErr.name != "failing-task" {
 				t.Errorf("expected nested task name 'failing-task', got %q", nestedSupErr.name)
@@ -463,13 +476,13 @@ func TestSupervisorMount(t *testing.T) {
 				t.Errorf("expected error %v, got %v", expectedErr, nestedSupErr.Err)
 			}
 		case <-time.After(timeout):
-			t.Fatal("parent supervisor did not receive error from optional nested supervisor")
+			t.Fatal("parent supervisor did not receive error from weak nested supervisor")
 		}
 
 		select {
 		case <-parent.DrainCh():
 		case <-time.After(timeout):
-			t.Fatal("parent supervisor failed to drain after optional nested error")
+			t.Fatal("parent supervisor failed to drain after weak nested error")
 		}
 	})
 

@@ -29,39 +29,45 @@ func (e Error) Error() string {
 	return fmt.Sprintf("task%s failed: %s", name, e.Err.Error())
 }
 
+//
+
 func TaskName(name string) RunOption {
 	return func(t *Task) {
 		t.name = name
 	}
 }
-func TaskOptional() RunOption {
+
+func TaskWeak() RunOption {
 	return func(t *Task) {
-		t.optional = true
+		t.weak = true
 	}
 }
 
+//
+
 type Task struct {
-	ctx      context.Context
-	fn       RunFunc
-	done     chan void
-	next     *Task
-	prev     *Task
-	name     string
-	optional bool
+	ctx  context.Context
+	fn   RunFunc
+	done chan void
+	next *Task
+	prev *Task
+	name string // optional label for task
+	weak bool   // weak tasks doesn't make whole group to exit if they exit without error
 }
 
-type Supervisor struct {
+type Group struct {
 	context.Context
 	cancelCtx context.CancelCauseFunc
 	tasks     *Task
-	mounts    map[*Supervisor]void
+	mounts    map[*Group]void
+	wg        sync.WaitGroup
 	drain     chan void
 	errs      chan error
 	active    int
 	mu        sync.Mutex
 }
 
-func (s *Supervisor) Run(fn RunFunc, options ...RunOption) {
+func (s *Group) Run(fn RunFunc, options ...RunOption) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -80,12 +86,12 @@ func (s *Supervisor) Run(fn RunFunc, options ...RunOption) {
 		s.tasks.prev = task
 	}
 	s.tasks = task
-	s.active++
 
+	s.wg.Add(1)
 	go s.run(ctx, task)
 }
 
-func (s *Supervisor) run(ctx context.Context, task *Task) {
+func (s *Group) run(ctx context.Context, task *Task) {
 	var err error
 	defer func() {
 		close(task.done)
@@ -94,21 +100,14 @@ func (s *Supervisor) run(ctx context.Context, task *Task) {
 		defer s.mu.Unlock()
 
 		s.remove(task)
-		s.active--
+		s.wg.Add(-1)
 
-		if !task.optional || err != nil {
+		if !task.weak || err != nil {
 			cause := err
 			if cause == nil {
 				cause = context.Cause(ctx)
 			}
 			s.cancel(cause)
-		}
-
-		if s.active == 0 {
-			// fixme: what if we would have only optional tasks?
-			// this will panic
-			// https://git.tatikoma.dev/corpix/atlas/issues/4
-			close(s.drain)
 		}
 	}()
 
@@ -121,7 +120,7 @@ func (s *Supervisor) run(ctx context.Context, task *Task) {
 	}
 }
 
-func (s *Supervisor) remove(t *Task) {
+func (s *Group) remove(t *Task) {
 	if t.prev != nil {
 		t.prev.next = t.next
 	} else {
@@ -132,7 +131,7 @@ func (s *Supervisor) remove(t *Task) {
 	}
 }
 
-func (s *Supervisor) Mount(super *Supervisor, options ...RunOption) {
+func (s *Group) Mount(super *Group, options ...RunOption) {
 	s.mu.Lock()
 	_, mounted := s.mounts[super]
 	s.mounts[super] = void{}
@@ -154,18 +153,31 @@ func (s *Supervisor) Mount(super *Supervisor, options ...RunOption) {
 	}, options...)
 }
 
-func (s *Supervisor) Cancel() {
+func (s *Group) Cancel() {
 	s.cancel(Canceled{})
 }
-func (s *Supervisor) DrainCh() <-chan void   { return s.drain }
-func (s *Supervisor) ErrorsCh() <-chan error { return s.errs }
-func (s *Supervisor) Wait()                  { <-s.drain }
+func (s *Group) DrainCh() <-chan void {
+	drainCh := make(chan void)
+	go func() {
+		s.wg.Wait()
+		close(drainCh)
+	}()
+	return drainCh
+}
 
-func (s *Supervisor) cancel(cause error) {
+func (s *Group) ErrorsCh() <-chan error {
+	return s.errs
+}
+
+func (s *Group) Wait() {
+	s.wg.Wait()
+}
+
+func (s *Group) cancel(cause error) {
 	s.cancelCtx(cause)
 }
 
-func (s *Supervisor) Select(ctx context.Context) error {
+func (s *Group) Select(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		return nil
@@ -176,13 +188,12 @@ func (s *Supervisor) Select(ctx context.Context) error {
 	}
 }
 
-func New(ctx context.Context) *Supervisor {
+func New(ctx context.Context) *Group {
 	innerCtx, cancel := context.WithCancelCause(ctx)
-	return &Supervisor{
+	return &Group{
 		Context:   innerCtx,
 		cancelCtx: cancel,
-		mounts:    map[*Supervisor]void{},
-		drain:     make(chan void),
+		mounts:    map[*Group]void{},
 		errs:      make(chan error, 1),
 	}
 }
