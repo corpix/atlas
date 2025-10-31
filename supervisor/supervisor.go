@@ -12,6 +12,7 @@ type (
 	Cause         error
 
 	Super interface {
+		Context
 		Run(Job)
 		Cancel(cause Cause)
 		Attach(child Super)
