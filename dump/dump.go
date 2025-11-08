@@ -14,9 +14,9 @@ func Print(xs ...any) {
 }
 
 func Printf(format string, xs ...any) {
-	_, _ = dumper.Printf(format, xs)
+	_, _ = dumper.Printf(format, xs...)
 }
 
 func Sprintf(format string, xs ...any) string {
-	return dumper.Sprintf(format, xs)
+	return dumper.Sprintf(format, xs...)
 }
