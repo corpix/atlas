@@ -30,7 +30,7 @@ func Test(t *testing.T) {
 
 	assert.Equal(
 		t,
-		SDiff(flat{A: "a", B: "b"}, flat{A: "a", B: "bb"}),
+		Sdiff(flat{A: "a", B: "b"}, flat{A: "a", B: "bb"}),
 		`@@ -2,3 +2,3 @@
    A: (string) (len=1) "a",
 -  B: (string) (len=1) "b"
@@ -38,9 +38,9 @@ func Test(t *testing.T) {
  }
 `,
 	)
-		assert.Equal(
+	assert.Equal(
 		t,
-		SDiff(flat{A: "a", B: "b"}, flat{A: "a", B: "b"}),
+		Sdiff(flat{A: "a", B: "b"}, flat{A: "a", B: "b"}),
 		``,
 	)
 }

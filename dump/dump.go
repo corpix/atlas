@@ -25,10 +25,10 @@ func Printf(format string, xs ...any) {
 }
 
 func Diff(a, b any) {
-	fmt.Println(SDiff(a, b))
+	fmt.Println(Sdiff(a, b))
 }
 
-func SDiff(a, b any) string {
+func Sdiff(a, b any) string {
 	diff, _ := difflib.GetUnifiedDiffString(difflib.UnifiedDiff{
 		A:       difflib.SplitLines(dumper.Sdump(a)),
 		B:       difflib.SplitLines(dumper.Sdump(b)),
