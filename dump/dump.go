@@ -16,6 +16,11 @@ var dumper = spew.ConfigState{
 	MaxDepth:                10,
 }
 
+type (
+	DiffParameters = difflib.UnifiedDiff
+	DiffOption     func(*DiffParameters)
+)
+
 func Print(xs ...any) {
 	dumper.Dump(xs...)
 }
@@ -24,16 +29,20 @@ func Printf(format string, xs ...any) {
 	_, _ = dumper.Printf(format, xs...)
 }
 
-func Diff(a, b any) {
-	fmt.Println(Sdiff(a, b))
+func Diff(a, b any, opts ...DiffOption) {
+	fmt.Println(Sdiff(a, b, opts...))
 }
 
-func Sdiff(a, b any) string {
-	diff, _ := difflib.GetUnifiedDiffString(difflib.UnifiedDiff{
-		A:       difflib.SplitLines(dumper.Sdump(a)),
-		B:       difflib.SplitLines(dumper.Sdump(b)),
+func Sdiff(a, b any, opts ...DiffOption) string {
+	params := difflib.UnifiedDiff{
 		Context: 1,
-	})
+	}
+	for _, fn := range opts {
+		fn(&params)
+	}
+	params.A = difflib.SplitLines(dumper.Sdump(a))
+	params.B = difflib.SplitLines(dumper.Sdump(b))
+	diff, _ := difflib.GetUnifiedDiffString(params)
 
 	return diff
 }
