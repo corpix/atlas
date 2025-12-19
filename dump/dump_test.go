@@ -38,4 +38,9 @@ func Test(t *testing.T) {
  }
 `,
 	)
+		assert.Equal(
+		t,
+		SDiff(flat{A: "a", B: "b"}, flat{A: "a", B: "b"}),
+		``,
+	)
 }
