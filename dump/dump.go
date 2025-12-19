@@ -9,11 +9,11 @@ import (
 
 var dumper = spew.ConfigState{
 	Indent:                  "  ",
-	DisablePointerAddresses: false,
+	DisablePointerAddresses: true,
 	DisableCapacities:       false,
 	SortKeys:                true,
 	DisableMethods:          true,
-	MaxDepth:                2,
+	MaxDepth:                10,
 }
 
 func Print(xs ...any) {
