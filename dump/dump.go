@@ -29,6 +29,14 @@ func Printf(format string, xs ...any) {
 	_, _ = dumper.Printf(format, xs...)
 }
 
+func Sprint(xs ...any) string {
+	return dumper.Sdump(xs...)
+}
+
+func Sprintf(format string, xs ...any) string {
+	return dumper.Sprintf(format, xs...)
+}
+
 func Diff(a, b any, opts ...DiffOption) {
 	fmt.Println(Sdiff(a, b, opts...))
 }
@@ -45,8 +53,4 @@ func Sdiff(a, b any, opts ...DiffOption) string {
 	diff, _ := difflib.GetUnifiedDiffString(params)
 
 	return diff
-}
-
-func Sprintf(format string, xs ...any) string {
-	return dumper.Sprintf(format, xs...)
 }
