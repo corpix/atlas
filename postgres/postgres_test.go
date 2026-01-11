@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/pashagolub/pgxmock/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/pashagolub/pgxmock/v4"
 
 	"git.tatikoma.dev/corpix/atlas/errors"
 )
