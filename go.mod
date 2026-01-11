@@ -14,6 +14,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.28
 	github.com/pashagolub/pgxmock/v4 v4.8.0
 	github.com/pkg/errors v0.9.1
+	github.com/pmezard/go-difflib v1.0.0
 	github.com/rs/zerolog v1.33.0
 	github.com/stretchr/testify v1.9.0
 	go.uber.org/goleak v1.3.0
@@ -28,7 +29,6 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
-	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	golang.org/x/crypto v0.37.0 // indirect
 	golang.org/x/net v0.30.0 // indirect
