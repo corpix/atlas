@@ -18,3 +18,8 @@ Tests use the Go testing framework, with dependencies such as `testify` and `pgx
 
 ## Commit & Pull Request Guidelines
 Recent history uses a concise `area: description` style (for example `dump: support diff options`, `supervisor: simplify interface`). Follow that pattern for new commits. For pull requests, include a short summary, the main packages affected, and the exact test command(s) you ran. Link related issues when applicable.
+
+## Agent Notes (Do Not Do)
+- Do not upgrade unrelated dependencies when making a targeted change; keep `go.mod`/`go.sum` updates minimal and scoped.
+- Do not change established defaults unless explicitly requested; preserve existing behavior.
+- Do not add extra exported API or abstraction layers beyond what the TODOs require; prefer the smallest compatible surface.
