@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -15,6 +14,7 @@ import (
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 
+	"git.tatikoma.dev/corpix/atlas/errors"
 	"git.tatikoma.dev/corpix/protoc-gen-grpc-capabilities/capabilities"
 )
 
@@ -155,6 +155,9 @@ func (g *GRPC) authorizeGrpcContext(ctx context.Context, method string) (context
 }
 
 func (g *GRPC) capabilitiesFromCertificate(cert *x509.Certificate) (capabilities.Capabilities, error) {
+	if !isClientCertificate(cert) {
+		return nil, errors.New("certificate is not valid for client auth")
+	}
 	for _, ext := range cert.Extensions {
 		if !ext.Id.Equal(CapabilitiesCertificateOID) {
 			continue

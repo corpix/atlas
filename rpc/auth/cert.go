@@ -73,7 +73,7 @@ func (r *CertTypeRegistry) Lookup(name string) (CertType, error) {
 	return certType, nil
 }
 
-type Options struct {
+type CertToolOptions struct {
 	NamePrefix string
 	NameSuffix string
 	Type       string
@@ -87,6 +87,8 @@ type Options struct {
 	Country     string
 
 	Capabilities []string
+	KeyUsage     x509.KeyUsage
+	ExtKeyUsage  []x509.ExtKeyUsage
 }
 
 type CertTool struct {
@@ -101,7 +103,7 @@ func NewCertTool(registry *CertTypeRegistry) *CertTool {
 }
 
 // Generate creates certificates based on options. Caller is responsible for synchronization.
-func (ct *CertTool) Generate(opts Options) error {
+func (ct *CertTool) Generate(opts CertToolOptions) error {
 	if strings.TrimSpace(opts.Type) == "" {
 		return errors.New("certificate type is required")
 	}
@@ -128,14 +130,14 @@ func (ct *CertTool) Generate(opts Options) error {
 	return nil
 }
 
-func (ct *CertTool) namespace(opts Options, fileName string) string {
+func (ct *CertTool) namespace(opts CertToolOptions, fileName string) string {
 	if opts.NamePrefix != "" {
 		return opts.NamePrefix + "." + fileName
 	}
 	return fileName
 }
 
-func (ct *CertTool) certFileName(opts Options, fileName string) string {
+func (ct *CertTool) certFileName(opts CertToolOptions, fileName string) string {
 	if opts.NameSuffix != "" {
 		ext := filepath.Ext(fileName)
 		base := strings.TrimSuffix(fileName, ext)
@@ -148,21 +150,21 @@ func (ct *CertTool) certFileName(opts Options, fileName string) string {
 	return ct.namespace(opts, fileName)
 }
 
-func (ct *CertTool) caKeyPath(opts Options) string {
+func (ct *CertTool) caKeyPath(opts CertToolOptions) string {
 	if opts.CAKeyPath != "" {
 		return opts.CAKeyPath
 	}
 	return ct.namespace(opts, CAKeyFile)
 }
 
-func (ct *CertTool) caCertPath(opts Options) string {
+func (ct *CertTool) caCertPath(opts CertToolOptions) string {
 	if opts.CACertPath != "" {
 		return opts.CACertPath
 	}
 	return ct.namespace(opts, CACertFile)
 }
 
-func (ct *CertTool) loadSerial(opts Options) (*big.Int, error) {
+func (ct *CertTool) loadSerial(opts CertToolOptions) (*big.Int, error) {
 	serialFilePath := ct.namespace(opts, SerialFile)
 	if !ct.fileExists(serialFilePath) {
 		err := os.WriteFile(serialFilePath, []byte("1"), 0o660)
@@ -185,11 +187,11 @@ func (ct *CertTool) loadSerial(opts Options) (*big.Int, error) {
 	return serial, nil
 }
 
-func (ct *CertTool) saveSerial(opts Options, serial *big.Int) error {
+func (ct *CertTool) saveSerial(opts CertToolOptions, serial *big.Int) error {
 	return os.WriteFile(ct.namespace(opts, SerialFile), []byte(serial.String()), 0o660)
 }
 
-func (ct *CertTool) generateCerts(opts Options, certType CertType, serial *big.Int) error {
+func (ct *CertTool) generateCerts(opts CertToolOptions, certType CertType, serial *big.Int) error {
 	if !ct.fileExists(ct.caKeyPath(opts)) {
 		if err := ct.generateCA(opts, serial); err != nil {
 			return fmt.Errorf("generating CA: %w", err)
@@ -204,7 +206,7 @@ func (ct *CertTool) generateCerts(opts Options, certType CertType, serial *big.I
 	return ct.generateCert(opts, certType, serial, caCert, caKey)
 }
 
-func (ct *CertTool) generateCA(opts Options, serial *big.Int) error {
+func (ct *CertTool) generateCA(opts CertToolOptions, serial *big.Int) error {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return err
@@ -239,7 +241,7 @@ func (ct *CertTool) generateCA(opts Options, serial *big.Int) error {
 	return ct.writePEMFile(ct.caKeyPath(opts), "EC PRIVATE KEY", keyBytes)
 }
 
-func (ct *CertTool) generateCert(opts Options, certType CertType, serial *big.Int, caCert *x509.Certificate, caKey *ecdsa.PrivateKey) error {
+func (ct *CertTool) generateCert(opts CertToolOptions, certType CertType, serial *big.Int, caCert *x509.Certificate, caKey *ecdsa.PrivateKey) error {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return err
@@ -257,6 +259,7 @@ func (ct *CertTool) generateCert(opts Options, certType CertType, serial *big.In
 	}
 	ct.applyCountry(template, opts.Country)
 	ct.applyAltNames(template, opts.IPAddresses, opts.DNSNames)
+	ct.applyKeyUsage(template, opts.KeyUsage, opts.ExtKeyUsage)
 	if err := ct.applyCapabilities(template, opts.Capabilities); err != nil {
 		return err
 	}
@@ -303,6 +306,15 @@ func (ct *CertTool) applyAltNames(template *x509.Certificate, ipAddresses, dnsNa
 	}
 }
 
+func (ct *CertTool) applyKeyUsage(template *x509.Certificate, keyUsage x509.KeyUsage, extKeyUsage []x509.ExtKeyUsage) {
+	if keyUsage != 0 {
+		template.KeyUsage = keyUsage
+	}
+	if len(extKeyUsage) > 0 {
+		template.ExtKeyUsage = extKeyUsage
+	}
+}
+
 func (ct *CertTool) applyCapabilities(template *x509.Certificate, capabilities []string) error {
 	if len(capabilities) == 0 {
 		return nil
@@ -325,7 +337,7 @@ func (ct *CertTool) applyCapabilities(template *x509.Certificate, capabilities [
 	return nil
 }
 
-func (ct *CertTool) readCA(opts Options) (*x509.Certificate, *ecdsa.PrivateKey, error) {
+func (ct *CertTool) readCA(opts CertToolOptions) (*x509.Certificate, *ecdsa.PrivateKey, error) {
 	caCertPEM, err := os.ReadFile(ct.caCertPath(opts))
 	if err != nil {
 		return nil, nil, err

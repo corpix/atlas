@@ -3,7 +3,10 @@ package auth
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"os"
 	"sync"
+
+	"git.tatikoma.dev/corpix/atlas/errors"
 )
 
 type TLSConfigCertificateManager struct {
@@ -54,7 +57,45 @@ func NewTLSConfigCertificateManager() *TLSConfigCertificateManager {
 	return &TLSConfigCertificateManager{}
 }
 
-func NewTLSConfig(hostname string, certPool *x509.CertPool, manager *TLSConfigCertificateManager) *tls.Config {
+func NewTLSConfigWithManager(hostname string, certPool *x509.CertPool, manager *TLSConfigCertificateManager) *tls.Config {
+	tc := newBaseTLSConfig(hostname, certPool)
+	tc.GetCertificate = manager.GetCertificate
+	tc.GetClientCertificate = manager.GetClientCertificate
+	return tc
+}
+
+func NewTLSConfig(hostname, caPath, certPath, keyPath string) (*tls.Config, error) {
+	certPool, err := NewCertPoolFromFile(caPath)
+	if err != nil {
+		return nil, err
+	}
+	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil {
+		return nil, err
+	}
+	tc := newBaseTLSConfig(hostname, certPool)
+	tc.Certificates = []tls.Certificate{cert}
+	return tc, nil
+}
+
+func NewCertPoolFromFile(caPath string) (*x509.CertPool, error) {
+	ca, err := os.ReadFile(caPath)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to read CA cert %q", caPath)
+	}
+	certPool := x509.NewCertPool()
+	if ok := certPool.AppendCertsFromPEM(ca); !ok {
+		return nil, errors.New("failed to append CA certificate")
+	}
+	return certPool, nil
+}
+
+func ApplyClientCertPolicy(tc *tls.Config) {
+	tc.ClientAuth = tls.VerifyClientCertIfGiven
+	tc.ClientCAs = tc.RootCAs
+}
+
+func newBaseTLSConfig(hostname string, certPool *x509.CertPool) *tls.Config {
 	return &tls.Config{
 		ServerName: hostname,
 		RootCAs:    certPool,
@@ -69,7 +110,17 @@ func NewTLSConfig(hostname string, certPool *x509.CertPool, manager *TLSConfigCe
 			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
 			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
 		},
-		GetCertificate:       manager.GetCertificate,
-		GetClientCertificate: manager.GetClientCertificate,
 	}
+}
+
+func isClientCertificate(cert *x509.Certificate) bool {
+	if len(cert.ExtKeyUsage) == 0 {
+		return false
+	}
+	for _, usage := range cert.ExtKeyUsage {
+		if usage == x509.ExtKeyUsageClientAuth {
+			return true
+		}
+	}
+	return false
 }

@@ -128,13 +128,6 @@ func (a *Auth) tokenClaims(ctx context.Context, token string) (*Claims, error) {
 	return &claims, nil
 }
 
-func WithClientCert() Option {
-	return func(a *Auth) {
-		a.tls.ClientAuth = tls.VerifyClientCertIfGiven
-		a.tls.ClientCAs = a.tls.RootCAs
-	}
-}
-
 func New(cfg Config, opts ...Option) (*Auth, error) {
 	ctx := context.Background()
 
@@ -156,7 +149,7 @@ func New(cfg Config, opts ...Option) (*Auth, error) {
 		return nil, err
 	}
 
-	tc := NewTLSConfig(cfg.URL.Hostname(), certPool, tccm)
+	tc := NewTLSConfigWithManager(cfg.URL.Hostname(), certPool, tccm)
 
 	//
 
