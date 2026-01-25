@@ -74,21 +74,19 @@ func (r *CertTypeRegistry) Lookup(name string) (CertType, error) {
 }
 
 type CertToolOptions struct {
-	NamePrefix string
-	NameSuffix string
-	Type       string
-
-	CAKeyPath  string
-	CACertPath string
-
-	IPAddresses string
-	DNSNames    string
-	CommonName  string
-	Country     string
-
+	Country      string
+	NameSuffix   string
+	Type         string
+	CAKeyPath    string
+	CACertPath   string
+	IPAddresses  string
+	DNSNames     string
+	CommonName   string
+	NamePrefix   string
 	Capabilities []string
-	KeyUsage     x509.KeyUsage
 	ExtKeyUsage  []x509.ExtKeyUsage
+	KeyUsage     x509.KeyUsage
+	GenerateCA   bool
 }
 
 type CertTool struct {
@@ -104,6 +102,9 @@ func NewCertTool(registry *CertTypeRegistry) *CertTool {
 
 // Generate creates certificates based on options. Caller is responsible for synchronization.
 func (ct *CertTool) Generate(opts CertToolOptions) error {
+	if opts.GenerateCA {
+		return ct.generateCA(opts)
+	}
 	if strings.TrimSpace(opts.Type) == "" {
 		return errors.New("certificate type is required")
 	}
@@ -113,18 +114,8 @@ func (ct *CertTool) Generate(opts CertToolOptions) error {
 		return err
 	}
 
-	serial, err := ct.loadSerial(opts)
-	if err != nil {
-		return fmt.Errorf("error loading serial: %w", err)
-	}
-	defer func() {
-		if err := ct.saveSerial(opts, serial); err != nil {
-			fmt.Printf("error saving serial: %v\n", err)
-		}
-	}()
-
-	if err := ct.generateCerts(opts, certType, serial); err != nil {
-		return fmt.Errorf("error generating certificates: %w", err)
+	if err := ct.generateCerts(opts, certType); err != nil {
+		return errors.Errorf("error generating certificates: %w", err)
 	}
 
 	return nil
@@ -169,19 +160,19 @@ func (ct *CertTool) loadSerial(opts CertToolOptions) (*big.Int, error) {
 	if !ct.fileExists(serialFilePath) {
 		err := os.WriteFile(serialFilePath, []byte("1"), 0o660)
 		if err != nil {
-			return nil, fmt.Errorf("error initializing cert serial number cache: %v", err)
+			return nil, errors.Errorf("error initializing cert serial number cache: %v", err)
 		}
 	}
 	buf, err := os.ReadFile(serialFilePath)
 	if err != nil {
-		return nil, fmt.Errorf("error reading cert serial number cache: %v", err)
+		return nil, errors.Errorf("error reading cert serial number cache: %v", err)
 	}
 
 	serial := big.NewInt(0)
 	var ok bool
 	serial, ok = serial.SetString(strings.TrimSpace(string(buf)), 10)
 	if !ok {
-		return nil, fmt.Errorf("error setting serial from cache: %v", string(buf))
+		return nil, errors.Errorf("error setting serial from cache: %v", string(buf))
 	}
 
 	return serial, nil
@@ -191,22 +182,42 @@ func (ct *CertTool) saveSerial(opts CertToolOptions, serial *big.Int) error {
 	return os.WriteFile(ct.namespace(opts, SerialFile), []byte(serial.String()), 0o660)
 }
 
-func (ct *CertTool) generateCerts(opts CertToolOptions, certType CertType, serial *big.Int) error {
+func (ct *CertTool) generateCerts(opts CertToolOptions, certType CertType) error {
 	if !ct.fileExists(ct.caKeyPath(opts)) {
-		if err := ct.generateCA(opts, serial); err != nil {
-			return fmt.Errorf("generating CA: %w", err)
+		if err := ct.generateCA(opts); err != nil {
+			return errors.Errorf("generating CA: %w", err)
 		}
 	}
 
+	serial, err := ct.loadSerial(opts)
+	if err != nil {
+		return errors.Errorf("error loading serial: %w", err)
+	}
+	defer func() {
+		if err := ct.saveSerial(opts, serial); err != nil {
+			fmt.Printf("error saving serial: %v\n", err)
+		}
+	}()
+
 	caCert, caKey, err := ct.readCA(opts)
 	if err != nil {
-		return fmt.Errorf("reading CA: %w", err)
+		return errors.Errorf("reading CA: %w", err)
 	}
 
 	return ct.generateCert(opts, certType, serial, caCert, caKey)
 }
 
-func (ct *CertTool) generateCA(opts CertToolOptions, serial *big.Int) error {
+func (ct *CertTool) generateCA(opts CertToolOptions) error {
+	serial, err := ct.loadSerial(opts)
+	if err != nil {
+		return errors.Errorf("error loading serial: %w", err)
+	}
+	defer func() {
+		if err := ct.saveSerial(opts, serial); err != nil {
+			fmt.Printf("error saving serial: %v\n", err)
+		}
+	}()
+
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return err

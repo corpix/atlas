@@ -28,7 +28,14 @@ func ExampleCertTool() {
 		return
 	}
 
-	if err := tool.Generate(Options{
+	if err := tool.Generate(CertToolOptions{
+		GenerateCA: true,
+		CommonName: "atlas-ca",
+	}); err != nil {
+		return
+	}
+
+	if err := tool.Generate(CertToolOptions{
 		Type:        "server",
 		CommonName:  "localhost",
 		IPAddresses: "127.0.0.1",
