@@ -125,7 +125,7 @@ func NewGatewayWithMux(ctx context.Context, a *auth.Auth, rpcEndpoint string, mu
 	cfg = cfg.Defaults()
 
 	opts := make([]grpc.DialOption, 0, 1+len(cfg.DialOptions))
-	opts = append(opts, a.DialOption())
+	opts = append(opts, a.GRPC().DialOption())
 	opts = append(opts, cfg.DialOptions...)
 
 	for _, srv := range cfg.Services {
@@ -151,7 +151,7 @@ func NewGatewayWithMux(ctx context.Context, a *auth.Auth, rpcEndpoint string, mu
 func NewGatewayMux(a *auth.Auth, cfg GatewayConfig) *gruntime.ServeMux {
 	opts := []gruntime.ServeMuxOption{
 		gruntime.WithIncomingHeaderMatcher(cfg.Hooks.HeaderMatcher),
-		gruntime.WithMetadata(a.MetadataAnnotator),
+		gruntime.WithMetadata(a.HTTP().MetadataAnnotator),
 		gruntime.WithErrorHandler(cfg.Hooks.ErrorHandler),
 	}
 

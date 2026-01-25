@@ -7,17 +7,17 @@ import (
 )
 
 type (
-	authTokenContextKey       void
-	authTokenClaimsContextKey void
+	tokenContextKey       void
+	tokenClaimsContextKey void
 )
 
 const (
-	AuthTokenMetadataKey = "authorization"
+	TokenMetadataKey = "authorization"
 )
 
 var (
-	AuthTokenContextKey       authTokenContextKey
-	AuthTokenClaimsContextKey authTokenClaimsContextKey
+	TokenContextKey       tokenContextKey
+	TokenClaimsContextKey tokenClaimsContextKey
 )
 
 type streamWithCtx struct {

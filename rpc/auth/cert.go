@@ -318,7 +318,7 @@ func (ct *CertTool) applyCapabilities(template *x509.Certificate, capabilities [
 	}
 
 	template.ExtraExtensions = append(template.ExtraExtensions, pkix.Extension{
-		Id:       AuthCapabilitiesCertificateOID,
+		Id:       CapabilitiesCertificateOID,
 		Critical: false,
 		Value:    capBytes,
 	})
