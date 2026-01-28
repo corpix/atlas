@@ -53,6 +53,9 @@ type (
 		CA   string
 		Cert string
 		Key  string
+		CRL  string
+
+		CRLPolicy CRLPolicy
 	}
 
 	TokenConfig struct {
@@ -150,6 +153,9 @@ func New(cfg Config, opts ...Option) (*Auth, error) {
 	}
 
 	tc := NewTLSConfigWithManager(cfg.URL.Hostname(), certPool, tccm)
+	if cfg.Certificate.CRL != "" {
+		ApplyCRLVerifier(tc, NewCRLVerifier(cfg.Certificate.CRL, cfg.Certificate.CRLPolicy))
+	}
 
 	//
 

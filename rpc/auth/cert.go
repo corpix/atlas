@@ -4,6 +4,8 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha1"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
@@ -24,18 +26,61 @@ import (
 const (
 	CAKeyFile  = "ca-key.pem"
 	CACertFile = "ca-cert.pem"
+	CRLFile    = "ca-crl.pem"
 	SerialFile = "serial"
+
+	DefaultCRLValidity = 24 * 7 * time.Hour // week
 )
 
-type CertType struct {
-	KeyFile  string
-	CertFile string
-}
+type (
+	CertTool struct {
+		*CertTypeRegistry
+	}
+	CertType struct {
+		KeyFile  string
+		CertFile string
+	}
+	CertTypeRegistry struct {
+		types map[string]CertType
+		mu    sync.RWMutex
+	}
 
-type CertTypeRegistry struct {
-	types map[string]CertType
-	mu    sync.RWMutex
-}
+	CertToolGenerateOptions struct {
+		Country      string
+		NameSuffix   string
+		Type         string
+		CAKeyPath    string
+		CACertPath   string
+		IPAddresses  string
+		DNSNames     string
+		CommonName   string
+		NamePrefix   string
+		Capabilities []string
+		ExtKeyUsage  []x509.ExtKeyUsage
+		KeyUsage     x509.KeyUsage
+		GenerateCA   bool
+	}
+
+	CertToolRevokeOptions struct {
+		NamePrefix     string
+		CACertPath     string
+		CAKeyPath      string
+		CRLPath        string
+		CertPath       string
+		SerialNumber   string
+		ReasonCode     int
+		RevocationTime time.Time
+		CRLValidity    time.Duration
+	}
+
+	CertToolCRLInitOptions struct {
+		NamePrefix  string
+		CACertPath  string
+		CAKeyPath   string
+		CRLPath     string
+		CRLValidity time.Duration
+	}
+)
 
 func NewCertTypeRegistry() *CertTypeRegistry {
 	return &CertTypeRegistry{types: map[string]CertType{}}
@@ -73,35 +118,8 @@ func (r *CertTypeRegistry) Lookup(name string) (CertType, error) {
 	return certType, nil
 }
 
-type CertToolOptions struct {
-	Country      string
-	NameSuffix   string
-	Type         string
-	CAKeyPath    string
-	CACertPath   string
-	IPAddresses  string
-	DNSNames     string
-	CommonName   string
-	NamePrefix   string
-	Capabilities []string
-	ExtKeyUsage  []x509.ExtKeyUsage
-	KeyUsage     x509.KeyUsage
-	GenerateCA   bool
-}
-
-type CertTool struct {
-	*CertTypeRegistry
-}
-
-func NewCertTool(registry *CertTypeRegistry) *CertTool {
-	if registry == nil {
-		registry = NewCertTypeRegistry()
-	}
-	return &CertTool{registry}
-}
-
 // Generate creates certificates based on options. Caller is responsible for synchronization.
-func (ct *CertTool) Generate(opts CertToolOptions) error {
+func (ct *CertTool) Generate(opts CertToolGenerateOptions) error {
 	if opts.GenerateCA {
 		return ct.generateCA(opts)
 	}
@@ -114,21 +132,141 @@ func (ct *CertTool) Generate(opts CertToolOptions) error {
 		return err
 	}
 
-	if err := ct.generateCerts(opts, certType); err != nil {
+	err = ct.generateCerts(opts, certType)
+	if err != nil {
 		return errors.Errorf("error generating certificates: %w", err)
 	}
 
 	return nil
 }
 
-func (ct *CertTool) namespace(opts CertToolOptions, fileName string) string {
-	if opts.NamePrefix != "" {
-		return opts.NamePrefix + "." + fileName
+// Revoke updates or creates a CRL entry for a certificate or serial number.
+func (ct *CertTool) Revoke(opts CertToolRevokeOptions) error {
+	serial, err := ct.resolveRevocationSerial(opts)
+	if err != nil {
+		return err
+	}
+
+	caCertPath := ct.caCertPathWithPrefix(opts.NamePrefix, opts.CACertPath)
+	caKeyPath := ct.caKeyPathWithPrefix(opts.NamePrefix, opts.CAKeyPath)
+	caCert, caKey, err := ct.readCAFiles(caCertPath, caKeyPath)
+	if err != nil {
+		return err
+	}
+
+	if len(caCert.SubjectKeyId) == 0 {
+		subjectKeyID, err := ct.subjectKeyID(caCert.PublicKey)
+		if err != nil {
+			return err
+		}
+		caCert.SubjectKeyId = subjectKeyID
+	}
+
+	crlPath := strings.TrimSpace(opts.CRLPath)
+	if crlPath == "" {
+		return nil
+	}
+
+	crlPath = ct.crlPathWithPrefix(opts.NamePrefix, crlPath)
+	rl, err := ct.readCRL(crlPath, caCert)
+	if err != nil {
+		return err
+	}
+
+	entries := revokedEntriesFromList(rl)
+	if !revocationListHasSerial(entries, serial) {
+		revocationTime := opts.RevocationTime
+		if revocationTime.IsZero() {
+			revocationTime = time.Now()
+		}
+		entries = append(entries, x509.RevocationListEntry{
+			SerialNumber:   serial,
+			RevocationTime: revocationTime,
+			ReasonCode:     opts.ReasonCode,
+		})
+	}
+
+	validity := opts.CRLValidity
+	if validity == 0 {
+		validity = DefaultCRLValidity
+	}
+	if validity < 0 {
+		return errors.New("crl validity must be positive")
+	}
+
+	now := time.Now()
+	number := nextCRLNumber(rl)
+	crl := &x509.RevocationList{
+		RevokedCertificateEntries: entries,
+		Number:                    number,
+		ThisUpdate:                now,
+		NextUpdate:                now.Add(validity),
+	}
+	crlBytes, err := x509.CreateRevocationList(rand.Reader, crl, caCert, caKey)
+	if err != nil {
+		return err
+	}
+
+	return ct.writePEMFile(crlPath, "X509 CRL", crlBytes)
+}
+
+// InitCRL creates a new empty CRL.
+func (ct *CertTool) InitCRL(opts CertToolCRLInitOptions) error {
+	crlPath := ct.crlPathWithPrefix(opts.NamePrefix, strings.TrimSpace(opts.CRLPath))
+	if crlPath == "" {
+		return errors.New("crl path is required")
+	}
+
+	caCertPath := ct.caCertPathWithPrefix(opts.NamePrefix, opts.CACertPath)
+	caKeyPath := ct.caKeyPathWithPrefix(opts.NamePrefix, opts.CAKeyPath)
+	caCert, caKey, err := ct.readCAFiles(caCertPath, caKeyPath)
+	if err != nil {
+		return err
+	}
+
+	if len(caCert.SubjectKeyId) == 0 {
+		subjectKeyID, err := ct.subjectKeyID(caCert.PublicKey)
+		if err != nil {
+			return err
+		}
+		caCert.SubjectKeyId = subjectKeyID
+	}
+
+	validity := opts.CRLValidity
+	if validity == 0 {
+		validity = DefaultCRLValidity
+	}
+	if validity < 0 {
+		return errors.New("crl validity must be positive")
+	}
+
+	now := time.Now()
+	crl := &x509.RevocationList{
+		RevokedCertificateEntries: nil,
+		Number:                    big.NewInt(1),
+		ThisUpdate:                now,
+		NextUpdate:                now.Add(validity),
+	}
+	crlBytes, err := x509.CreateRevocationList(rand.Reader, crl, caCert, caKey)
+	if err != nil {
+		return err
+	}
+
+	return ct.writePEMFile(crlPath, "X509 CRL", crlBytes)
+}
+
+func (ct *CertTool) namespace(opts CertToolGenerateOptions, fileName string) string {
+	return ct.namespacePrefix(opts.NamePrefix, fileName)
+}
+
+func (ct *CertTool) namespacePrefix(namePrefix, fileName string) string {
+	if namePrefix != "" {
+		return namePrefix + "." + fileName
 	}
 	return fileName
 }
 
-func (ct *CertTool) certFileName(opts CertToolOptions, fileName string) string {
+func (ct *CertTool) certFileName(opts CertToolGenerateOptions, fileName string) string {
 	if opts.NameSuffix != "" {
 		ext := filepath.Ext(fileName)
 		base := strings.TrimSuffix(fileName, ext)
@@ -141,21 +279,36 @@ func (ct *CertTool) certFileName(opts CertToolOptions, fileName string) string {
 	return ct.namespace(opts, fileName)
 }
 
-func (ct *CertTool) caKeyPath(opts CertToolOptions) string {
-	if opts.CAKeyPath != "" {
-		return opts.CAKeyPath
-	}
-	return ct.namespace(opts, CAKeyFile)
+func (ct *CertTool) caKeyPath(opts CertToolGenerateOptions) string {
+	return ct.caKeyPathWithPrefix(opts.NamePrefix, opts.CAKeyPath)
 }
 
-func (ct *CertTool) caCertPath(opts CertToolOptions) string {
-	if opts.CACertPath != "" {
-		return opts.CACertPath
-	}
-	return ct.namespace(opts, CACertFile)
+func (ct *CertTool) caCertPath(opts CertToolGenerateOptions) string {
+	return ct.caCertPathWithPrefix(opts.NamePrefix, opts.CACertPath)
 }
 
-func (ct *CertTool) loadSerial(opts CertToolOptions) (*big.Int, error) {
+func (ct *CertTool) caKeyPathWithPrefix(namePrefix, path string) string {
+	if path != "" {
+		return path
+	}
+	return ct.namespacePrefix(namePrefix, CAKeyFile)
+}
+
+func (ct *CertTool) caCertPathWithPrefix(namePrefix, path string) string {
+	if path != "" {
+		return path
+	}
+	return ct.namespacePrefix(namePrefix, CACertFile)
+}
+
+func (ct *CertTool) crlPathWithPrefix(namePrefix, path string) string {
+	if path != "" {
+		return path
+	}
+	return ct.namespacePrefix(namePrefix, CRLFile)
+}
+
+func (ct *CertTool) loadSerial(opts CertToolGenerateOptions) (*big.Int, error) {
 	serialFilePath := ct.namespace(opts, SerialFile)
 	if !ct.fileExists(serialFilePath) {
 		err := os.WriteFile(serialFilePath, []byte("1"), 0o660)
@@ -178,13 +331,14 @@ func (ct *CertTool) loadSerial(opts CertToolOptions) (*big.Int, error) {
 	return serial, nil
 }
 
-func (ct *CertTool) saveSerial(opts CertToolOptions, serial *big.Int) error {
+func (ct *CertTool) saveSerial(opts CertToolGenerateOptions, serial *big.Int) error {
 	return os.WriteFile(ct.namespace(opts, SerialFile), []byte(serial.String()), 0o660)
 }
 
-func (ct *CertTool) generateCerts(opts CertToolOptions, certType CertType) error {
+func (ct *CertTool) generateCerts(opts CertToolGenerateOptions, certType CertType) error {
 	if !ct.fileExists(ct.caKeyPath(opts)) {
-		if err := ct.generateCA(opts); err != nil {
+		err := ct.generateCA(opts)
+		if err != nil {
 			return errors.Errorf("generating CA: %w", err)
 		}
 	}
@@ -194,7 +348,8 @@ func (ct *CertTool) generateCerts(opts CertToolOptions, certType CertType) error
 		return errors.Errorf("error loading serial: %w", err)
 	}
 	defer func() {
-		if err := ct.saveSerial(opts, serial); err != nil {
+		err := ct.saveSerial(opts, serial)
+		if err != nil {
 			fmt.Printf("error saving serial: %v\n", err)
 		}
 	}()
@@ -207,18 +362,24 @@ func (ct *CertTool) generateCerts(opts CertToolOptions, certType CertType) error
 	return ct.generateCert(opts, certType, serial, caCert, caKey)
 }
 
-func (ct *CertTool) generateCA(opts CertToolOptions) error {
+func (ct *CertTool) generateCA(opts CertToolGenerateOptions) error {
 	serial, err := ct.loadSerial(opts)
 	if err != nil {
 		return errors.Errorf("error loading serial: %w", err)
 	}
 	defer func() {
-		if err := ct.saveSerial(opts, serial); err != nil {
+		err := ct.saveSerial(opts, serial)
+		if err != nil {
 			fmt.Printf("error saving serial: %v\n", err)
 		}
 	}()
 
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return err
+	}
+
+	subjectKeyID, err := ct.subjectKeyID(&key.PublicKey)
 	if err != nil {
 		return err
 	}
@@ -232,6 +393,8 @@ func (ct *CertTool) generateCA(opts CertToolOptions) error {
 		NotAfter:              time.Now().AddDate(10, 0, 0),
 		IsCA:                  true,
 		BasicConstraintsValid: true,
+		SubjectKeyId:          subjectKeyID,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 	}
 	ct.applyCountry(template, opts.Country)
 
@@ -240,7 +403,8 @@ func (ct *CertTool) generateCA(opts CertToolOptions) error {
 		return err
 	}
 
-	if err := ct.writePEMFile(ct.caCertPath(opts), "CERTIFICATE", certBytes); err != nil {
+	err = ct.writePEMFile(ct.caCertPath(opts), "CERTIFICATE", certBytes)
+	if err != nil {
 		return err
 	}
 
@@ -252,7 +416,7 @@ func (ct *CertTool) generateCA(opts CertToolOptions) error {
 	return ct.writePEMFile(ct.caKeyPath(opts), "EC PRIVATE KEY", keyBytes)
 }
 
-func (ct *CertTool) generateCert(opts CertToolOptions, certType CertType, serial *big.Int, caCert *x509.Certificate, caKey *ecdsa.PrivateKey) error {
+func (ct *CertTool) generateCert(opts CertToolGenerateOptions, certType CertType, serial *big.Int, caCert *x509.Certificate, caKey *ecdsa.PrivateKey) error {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return err
@@ -271,7 +435,9 @@ func (ct *CertTool) generateCert(opts CertToolOptions, certType CertType, serial
 	ct.applyCountry(template, opts.Country)
 	ct.applyAltNames(template, opts.IPAddresses, opts.DNSNames)
 	ct.applyKeyUsage(template, opts.KeyUsage, opts.ExtKeyUsage)
-	if err := ct.applyCapabilities(template, opts.Capabilities); err != nil {
+
+	err = ct.applyCapabilities(template, opts.Capabilities)
+	if err != nil {
 		return err
 	}
 
@@ -280,7 +446,8 @@ func (ct *CertTool) generateCert(opts CertToolOptions, certType CertType, serial
 		return err
 	}
 
-	if err := ct.writePEMFile(ct.certFileName(opts, certType.CertFile), "CERTIFICATE", certBytes); err != nil {
+	err = ct.writePEMFile(ct.certFileName(opts, certType.CertFile), "CERTIFICATE", certBytes)
+	if err != nil {
 		return err
 	}
 
@@ -348,12 +515,16 @@ func (ct *CertTool) applyCapabilities(template *x509.Certificate, capabilities [
 	return nil
 }
 
-func (ct *CertTool) readCA(opts CertToolOptions) (*x509.Certificate, *ecdsa.PrivateKey, error) {
-	caCertPEM, err := os.ReadFile(ct.caCertPath(opts))
+func (ct *CertTool) readCA(opts CertToolGenerateOptions) (*x509.Certificate, *ecdsa.PrivateKey, error) {
+	return ct.readCAFiles(ct.caCertPath(opts), ct.caKeyPath(opts))
+}
+
+func (ct *CertTool) readCAFiles(certPath, keyPath string) (*x509.Certificate, *ecdsa.PrivateKey, error) {
+	caCertPEM, err := os.ReadFile(certPath)
 	if err != nil {
 		return nil, nil, err
 	}
-	caKeyPEM, err := os.ReadFile(ct.caKeyPath(opts))
+	caKeyPEM, err := os.ReadFile(keyPath)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -395,19 +566,127 @@ func (ct *CertTool) parsePrivateKey(keyPEM []byte) (*ecdsa.PrivateKey, error) {
 }
 
 func (ct *CertTool) writePEMFile(path, pemType string, data []byte) error {
-	file, err := os.Create(path)
+	dir := filepath.Dir(path)
+	tmpFile, err := os.CreateTemp(dir, ".crl-*")
 	if err != nil {
 		return err
 	}
-	defer errors.LogCallErr(file.Close, "failed to close file %q", path)
+	defer func() {
+		tmpname := tmpFile.Name()
+		err := os.Remove(tmpname)
+		if err != nil && !os.IsNotExist(err) {
+			errors.Log(err, "failed to remove tmp file %q", tmpname)
+		}
+	}()
 
-	return pem.Encode(file, &pem.Block{
+	err = tmpFile.Chmod(0o660)
+	if err != nil {
+		return err
+	}
+	err = pem.Encode(tmpFile, &pem.Block{
 		Type:  pemType,
 		Bytes: data,
 	})
+	if err != nil {
+		return err
+	}
+	err = tmpFile.Close()
+	if err != nil {
+		return err
+	}
+
+	return os.Rename(tmpFile.Name(), path)
+
 }
 
 func (ct *CertTool) fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+func (ct *CertTool) subjectKeyID(pub any) ([]byte, error) {
+	pubKeyBytes, err := x509.MarshalPKIXPublicKey(pub)
+	if err != nil {
+		return nil, err
+	}
+	sum := sha256.Sum256(pubKeyBytes)
+	// see: https://datatracker.ietf.org/doc/html/rfc7093#section-2
+	return sum[sha1.Size:], nil
+}
+
+func (ct *CertTool) resolveRevocationSerial(opts CertToolRevokeOptions) (*big.Int, error) {
+	if strings.TrimSpace(opts.CertPath) != "" {
+		certPEM, err := os.ReadFile(opts.CertPath)
+		if err != nil {
+			return nil, err
+		}
+		cert, err := ct.parseCert(certPEM)
+		if err != nil {
+			return nil, err
+		}
+		return cert.SerialNumber, nil
+	}
+
+	serialText := strings.TrimSpace(opts.SerialNumber)
+	if serialText == "" {
+		return nil, errors.New("certificate path or serial number is required")
+	}
+	serial := new(big.Int)
+	if _, ok := serial.SetString(serialText, 0); !ok {
+		return nil, errors.Errorf("invalid serial number %q", serialText)
+	}
+
+	return serial, nil
+}
+
+func (ct *CertTool) readCRL(path string, caCert *x509.Certificate) (*x509.RevocationList, error) {
+	crlPEM, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	rl, err := parseCRL(crlPEM)
+	if err != nil {
+		return nil, err
+	}
+	err = rl.CheckSignatureFrom(caCert)
+	if err != nil {
+		return nil, err
+	}
+
+	return rl, nil
+}
+
+func revokedEntriesFromList(rl *x509.RevocationList) []x509.RevocationListEntry {
+	if len(rl.RevokedCertificateEntries) > 0 {
+		return append([]x509.RevocationListEntry{}, rl.RevokedCertificateEntries...)
+	}
+	if len(rl.RevokedCertificateEntries) == 0 {
+		return nil
+	}
+	entries := make([]x509.RevocationListEntry, 0, len(rl.RevokedCertificateEntries))
+	for _, entry := range rl.RevokedCertificateEntries {
+		entries = append(entries, x509.RevocationListEntry{
+			SerialNumber:   entry.SerialNumber,
+			RevocationTime: entry.RevocationTime,
+			Extensions:     entry.Extensions,
+		})
+	}
+	return entries
+}
+
+func revocationListHasSerial(entries []x509.RevocationListEntry, serial *big.Int) bool {
+	for _, entry := range entries {
+		if entry.SerialNumber != nil && entry.SerialNumber.Cmp(serial) == 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func NewCertTool(registry *CertTypeRegistry) *CertTool {
+	if registry == nil {
+		registry = NewCertTypeRegistry()
+	}
+	return &CertTool{registry}
 }

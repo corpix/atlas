@@ -13,34 +13,40 @@ func ExampleCertTool() {
 
 	dir, err := os.MkdirTemp("", "auth-cert-example-*")
 	if err != nil {
-		return
+		panic(err)
 	}
 	defer os.RemoveAll(dir)
 
 	cwd, err := os.Getwd()
 	if err != nil {
-		return
+		panic(err)
 	}
 	defer func() {
 		_ = os.Chdir(cwd)
 	}()
 	if err := os.Chdir(dir); err != nil {
-		return
+		panic(err)
 	}
 
-	if err := tool.Generate(CertToolOptions{
+	if err := tool.Generate(CertToolGenerateOptions{
 		GenerateCA: true,
 		CommonName: "atlas-ca",
 	}); err != nil {
-		return
+		panic(err)
 	}
 
-	if err := tool.Generate(CertToolOptions{
+	if err := tool.Generate(CertToolGenerateOptions{
 		Type:        "server",
 		CommonName:  "localhost",
 		IPAddresses: "127.0.0.1",
 		DNSNames:    "localhost",
 	}); err != nil {
-		return
+		panic(err)
+	}
+
+	if err := tool.Revoke(CertToolRevokeOptions{
+		CertPath: "server-cert.pem",
+	}); err != nil {
+		panic(err)
 	}
 }
