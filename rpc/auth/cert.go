@@ -62,6 +62,7 @@ type (
 	}
 
 	CertToolRevokeOptions struct {
+		RevocationTime time.Time
 		NamePrefix     string
 		CACertPath     string
 		CAKeyPath      string
@@ -69,7 +70,6 @@ type (
 		CertPath       string
 		SerialNumber   string
 		ReasonCode     int
-		RevocationTime time.Time
 		CRLValidity    time.Duration
 	}
 

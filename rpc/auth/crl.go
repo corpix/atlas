@@ -21,12 +21,11 @@ type (
 	CRLPolicy int
 
 	CRLVerifier struct {
-		path   string
-		policy CRLPolicy
-
-		mu      sync.Mutex
 		modTime time.Time
 		crl     *x509.RevocationList
+		path    string
+		policy  CRLPolicy
+		mu      sync.Mutex
 	}
 )
 
