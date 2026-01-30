@@ -2,6 +2,9 @@ package auth
 
 import (
 	"math/big"
+	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"git.tatikoma.dev/corpix/atlas/app"
@@ -118,6 +121,11 @@ func (*CertApp) Flags() app.Flags {
 			Usage: "serial number to revoke (decimal or 0x prefixed)",
 		},
 		&app.StringFlag{
+			Name:  "mode",
+			Usage: "file mode for generated files (octal, e.g. 640)",
+			Value: "640",
+		},
+		&app.StringFlag{
 			Name:  "revocation-time",
 			Usage: "revocation time (RFC3339, defaults to now)",
 		},
@@ -163,6 +171,10 @@ func (a *CertApp) Cert(ctx *app.Context) error {
 	revoke := ctx.Bool("revoke")
 	initCRL := ctx.Bool("init-crl")
 	certType := ctx.String("type")
+	fileMode, err := parseFileMode(ctx.String("mode"))
+	if err != nil {
+		return err
+	}
 
 	if revoke && initCRL {
 		return errors.New("init-crl and revoke are mutually exclusive")
@@ -179,6 +191,7 @@ func (a *CertApp) Cert(ctx *app.Context) error {
 			CAKeyPath:  ctx.String("ca-key"),
 			CommonName: ctx.String("common-name"),
 			Country:    ctx.String("country"),
+			FileMode:   fileMode,
 			GenerateCA: true,
 		})
 		if err != nil {
@@ -194,6 +207,7 @@ func (a *CertApp) Cert(ctx *app.Context) error {
 			CAKeyPath:   ctx.String("ca-key"),
 			CRLPath:     ctx.String("crl"),
 			CRLValidity: ctx.Duration("crl-validity"),
+			FileMode:    fileMode,
 		})
 		if err != nil {
 			return errors.Wrap(err, "error initializing CRL")
@@ -243,6 +257,7 @@ func (a *CertApp) Cert(ctx *app.Context) error {
 			ReasonCode:     reasonCode,
 			RevocationTime: revocationTime,
 			CRLValidity:    crlValidity,
+			FileMode:       fileMode,
 		})
 		if err != nil {
 			return errors.Wrap(err, "error revoking certificate")
@@ -256,6 +271,7 @@ func (a *CertApp) Cert(ctx *app.Context) error {
 			Type:        certType,
 			CACertPath:  ctx.String("ca-cert"),
 			CAKeyPath:   ctx.String("ca-key"),
+			FileMode:    fileMode,
 			IPAddresses: ctx.String("ip-addresses"),
 			DNSNames:    ctx.String("dns-names"),
 			CommonName:  ctx.String("common-name"),
@@ -287,4 +303,16 @@ func (*CertApp) parseRevocationReason(reason string) (int, error) {
 	}
 
 	return 0, errors.Errorf("invalid revocation reason: %s", reason)
+}
+
+func parseFileMode(text string) (os.FileMode, error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return 0, nil
+	}
+	value, err := strconv.ParseUint(text, 8, 32)
+	if err != nil {
+		return 0, errors.Wrapf(err, "invalid mode %q", text)
+	}
+	return os.FileMode(value), nil
 }

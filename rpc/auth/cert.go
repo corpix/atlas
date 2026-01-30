@@ -30,6 +30,7 @@ const (
 	SerialFile = "serial"
 
 	DefaultCRLValidity = 24 * 7 * time.Hour // week
+	DefaultFileMode    = 0o640
 )
 
 type (
@@ -46,18 +47,19 @@ type (
 	}
 
 	CertToolGenerateOptions struct {
-		Country      string
-		NameSuffix   string
+		IPAddresses  string
+		NamePrefix   string
 		Type         string
 		CAKeyPath    string
 		CACertPath   string
-		IPAddresses  string
 		DNSNames     string
 		CommonName   string
-		NamePrefix   string
+		Country      string
+		NameSuffix   string
 		Capabilities []string
 		ExtKeyUsage  []x509.ExtKeyUsage
 		KeyUsage     x509.KeyUsage
+		FileMode     os.FileMode
 		GenerateCA   bool
 	}
 
@@ -71,6 +73,7 @@ type (
 		SerialNumber   string
 		ReasonCode     int
 		CRLValidity    time.Duration
+		FileMode       os.FileMode
 	}
 
 	CertToolCRLInitOptions struct {
@@ -79,6 +82,7 @@ type (
 		CAKeyPath   string
 		CRLPath     string
 		CRLValidity time.Duration
+		FileMode    os.FileMode
 	}
 )
 
@@ -207,7 +211,7 @@ func (ct *CertTool) Revoke(opts CertToolRevokeOptions) error {
 		return err
 	}
 
-	return ct.writePEMFile(crlPath, "X509 CRL", crlBytes)
+	return ct.writePEMFile(crlPath, "X509 CRL", crlBytes, opts.FileMode)
 }
 
 // InitCRL creates a new empty CRL.
@@ -252,7 +256,7 @@ func (ct *CertTool) InitCRL(opts CertToolCRLInitOptions) error {
 		return err
 	}
 
-	return ct.writePEMFile(crlPath, "X509 CRL", crlBytes)
+	return ct.writePEMFile(crlPath, "X509 CRL", crlBytes, opts.FileMode)
 }
 
 func (ct *CertTool) namespace(opts CertToolGenerateOptions, fileName string) string {
@@ -311,7 +315,11 @@ func (ct *CertTool) crlPathWithPrefix(namePrefix, path string) string {
 func (ct *CertTool) loadSerial(opts CertToolGenerateOptions) (*big.Int, error) {
 	serialFilePath := ct.namespace(opts, SerialFile)
 	if !ct.fileExists(serialFilePath) {
-		err := os.WriteFile(serialFilePath, []byte("1"), 0o660)
+		mode := opts.FileMode
+		if mode == 0 {
+			mode = DefaultFileMode
+		}
+		err := os.WriteFile(serialFilePath, []byte("1"), mode)
 		if err != nil {
 			return nil, errors.Errorf("error initializing cert serial number cache: %v", err)
 		}
@@ -332,7 +340,11 @@ func (ct *CertTool) loadSerial(opts CertToolGenerateOptions) (*big.Int, error) {
 }
 
 func (ct *CertTool) saveSerial(opts CertToolGenerateOptions, serial *big.Int) error {
-	return os.WriteFile(ct.namespace(opts, SerialFile), []byte(serial.String()), 0o660)
+	mode := opts.FileMode
+	if mode == 0 {
+		mode = DefaultFileMode
+	}
+	return os.WriteFile(ct.namespace(opts, SerialFile), []byte(serial.String()), mode)
 }
 
 func (ct *CertTool) generateCerts(opts CertToolGenerateOptions, certType CertType) error {
@@ -403,7 +415,7 @@ func (ct *CertTool) generateCA(opts CertToolGenerateOptions) error {
 		return err
 	}
 
-	err = ct.writePEMFile(ct.caCertPath(opts), "CERTIFICATE", certBytes)
+	err = ct.writePEMFile(ct.caCertPath(opts), "CERTIFICATE", certBytes, opts.FileMode)
 	if err != nil {
 		return err
 	}
@@ -413,7 +425,7 @@ func (ct *CertTool) generateCA(opts CertToolGenerateOptions) error {
 		return err
 	}
 
-	return ct.writePEMFile(ct.caKeyPath(opts), "EC PRIVATE KEY", keyBytes)
+	return ct.writePEMFile(ct.caKeyPath(opts), "EC PRIVATE KEY", keyBytes, opts.FileMode)
 }
 
 func (ct *CertTool) generateCert(opts CertToolGenerateOptions, certType CertType, serial *big.Int, caCert *x509.Certificate, caKey *ecdsa.PrivateKey) error {
@@ -446,7 +458,7 @@ func (ct *CertTool) generateCert(opts CertToolGenerateOptions, certType CertType
 		return err
 	}
 
-	err = ct.writePEMFile(ct.certFileName(opts, certType.CertFile), "CERTIFICATE", certBytes)
+	err = ct.writePEMFile(ct.certFileName(opts, certType.CertFile), "CERTIFICATE", certBytes, opts.FileMode)
 	if err != nil {
 		return err
 	}
@@ -456,7 +468,7 @@ func (ct *CertTool) generateCert(opts CertToolGenerateOptions, certType CertType
 		return err
 	}
 
-	return ct.writePEMFile(ct.certFileName(opts, certType.KeyFile), "EC PRIVATE KEY", keyBytes)
+	return ct.writePEMFile(ct.certFileName(opts, certType.KeyFile), "EC PRIVATE KEY", keyBytes, opts.FileMode)
 }
 
 func (ct *CertTool) applyCountry(template *x509.Certificate, country string) {
@@ -565,7 +577,10 @@ func (ct *CertTool) parsePrivateKey(keyPEM []byte) (*ecdsa.PrivateKey, error) {
 	return x509.ParseECPrivateKey(block.Bytes)
 }
 
-func (ct *CertTool) writePEMFile(path, pemType string, data []byte) error {
+func (ct *CertTool) writePEMFile(path, pemType string, data []byte, mode os.FileMode) error {
+	if mode == 0 {
+		mode = DefaultFileMode
+	}
 	dir := filepath.Dir(path)
 	tmpFile, err := os.CreateTemp(dir, ".crl-*")
 	if err != nil {
@@ -579,7 +594,7 @@ func (ct *CertTool) writePEMFile(path, pemType string, data []byte) error {
 		}
 	}()
 
-	err = tmpFile.Chmod(0o660)
+	err = tmpFile.Chmod(mode)
 	if err != nil {
 		return err
 	}
