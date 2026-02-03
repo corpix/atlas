@@ -54,7 +54,7 @@ type (
 		CACertPath   string
 		DNSNames     string
 		CommonName   string
-		Country      string
+		Region       string
 		NameSuffix   string
 		Capabilities []string
 		ExtKeyUsage  []x509.ExtKeyUsage
@@ -408,7 +408,7 @@ func (ct *CertTool) generateCA(opts CertToolGenerateOptions) error {
 		SubjectKeyId:          subjectKeyID,
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 	}
-	ct.applyCountry(template, opts.Country)
+	ct.applyRegion(template, opts.Region)
 
 	certBytes, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
 	if err != nil {
@@ -444,7 +444,7 @@ func (ct *CertTool) generateCert(opts CertToolGenerateOptions, certType CertType
 		NotBefore: time.Now(),
 		NotAfter:  time.Now().AddDate(10, 0, 0),
 	}
-	ct.applyCountry(template, opts.Country)
+	ct.applyRegion(template, opts.Region)
 	ct.applyAltNames(template, opts.IPAddresses, opts.DNSNames)
 	ct.applyKeyUsage(template, opts.KeyUsage, opts.ExtKeyUsage)
 
@@ -471,12 +471,12 @@ func (ct *CertTool) generateCert(opts CertToolGenerateOptions, certType CertType
 	return ct.writePEMFile(ct.certFileName(opts, certType.KeyFile), "EC PRIVATE KEY", keyBytes, opts.FileMode)
 }
 
-func (ct *CertTool) applyCountry(template *x509.Certificate, country string) {
-	country = strings.TrimSpace(country)
-	if country == "" {
+func (ct *CertTool) applyRegion(template *x509.Certificate, region string) {
+	region = strings.TrimSpace(region)
+	if region == "" {
 		return
 	}
-	template.Subject.Country = []string{strings.ToUpper(country)}
+	template.Subject.Country = []string{strings.ToUpper(region)}
 }
 
 func (ct *CertTool) applyAltNames(template *x509.Certificate, ipAddresses, dnsNames string) {
@@ -611,7 +611,6 @@ func (ct *CertTool) writePEMFile(path, pemType string, data []byte, mode os.File
 	}
 
 	return os.Rename(tmpFile.Name(), path)
-
 }
 
 func (ct *CertTool) fileExists(path string) bool {

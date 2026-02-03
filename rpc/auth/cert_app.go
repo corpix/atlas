@@ -152,8 +152,8 @@ func (*CertApp) Flags() app.Flags {
 			Value: "localhost",
 		},
 		&app.StringFlag{
-			Name:  "country",
-			Usage: "country code to encode into certificate subject (ISO 3166-1 alpha-2)",
+			Name:  "region",
+			Usage: "region identifier to encode into certificate subject",
 		},
 	}
 }
@@ -190,7 +190,7 @@ func (a *CertApp) Cert(ctx *app.Context) error {
 			CACertPath: ctx.String("ca-cert"),
 			CAKeyPath:  ctx.String("ca-key"),
 			CommonName: ctx.String("common-name"),
-			Country:    ctx.String("country"),
+			Region:     ctx.String("region"),
 			FileMode:   fileMode,
 			GenerateCA: true,
 		})
@@ -275,7 +275,7 @@ func (a *CertApp) Cert(ctx *app.Context) error {
 			IPAddresses: ctx.String("ip-addresses"),
 			DNSNames:    ctx.String("dns-names"),
 			CommonName:  ctx.String("common-name"),
-			Country:     ctx.String("country"),
+			Region:      ctx.String("region"),
 		}
 		if a.setGenerateOptions != nil {
 			err := a.setGenerateOptions(ctx, &opts)
