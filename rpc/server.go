@@ -16,7 +16,7 @@ func NewServer(tlsCfg *tls.Config, a *auth.Auth, l log.Logger) *grpc.Server {
 }
 
 type serverOptions struct {
-	validator Validator
+	validator   Validator
 	transformer Transformer
 }
 
@@ -37,7 +37,7 @@ func WithTransformer(t Transformer) ServerOption {
 func NewServerWithOptions(tlsCfg *tls.Config, a *auth.Auth, l log.Logger, options ...ServerOption) *grpc.Server {
 	logger := LoggerInterceptor(l)
 	opts := serverOptions{
-		validator: ValidatorMethod{},
+		validator:   ValidatorMethod{},
 		transformer: DefaultsTransformer{},
 	}
 	for _, option := range options {
