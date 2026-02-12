@@ -2,8 +2,16 @@ package rpc
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
+	protovalidate "github.com/bufbuild/protovalidate-go"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/protobuf/proto"
+
+	"git.tatikoma.dev/corpix/atlas/errors"
+	atlasrpc "git.tatikoma.dev/corpix/atlas/rpc/pb"
 )
 
 type Validator interface {
@@ -16,22 +24,87 @@ func (f ValidatorFunc) Validate(req any) error {
 	return f(req)
 }
 
-type ValidatorMethod struct{}
+// Deprecated: use protovalidate annotations instead.
+type ValidatorMethod interface {
+	Validate() error
+}
 
-func (ValidatorMethod) Validate(req any) error {
-	if v, ok := req.(interface{ Validate() error }); ok {
+type validator struct{}
+
+func (validator) Validate(req any) error {
+	if v, ok := req.(ValidatorMethod); ok {
 		return v.Validate()
 	}
-	return nil
+	msg, ok := req.(proto.Message)
+	if !ok {
+		return nil
+	}
+	return ValidateProtoMessage(msg)
 }
 
 type ValidationError struct {
 	Field   string
+	Rule    string
 	Message string
 }
 
+type ErrValidation = ValidationError
+
+func (e *ValidationError) Error() string {
+	return e.Message
+}
+
+func (e *ValidationError) ErrorDetails() []proto.Message {
+	return []proto.Message{
+		&atlasrpc.ValidationError{
+			Field:   e.Field,
+			Rule:    e.Rule,
+			Message: e.Message,
+		},
+	}
+}
+
+func ValidateProtoMessage(msg proto.Message) error {
+	err := protovalidate.Validate(msg)
+	if err == nil {
+		return nil
+	}
+
+	var validationErr *protovalidate.ValidationError
+	if errors.As(err, &validationErr) {
+		field, rule, message := FormatValidationError(validationErr)
+		return errors.RpcCode(&ValidationError{
+			Field:   field,
+			Rule:    rule,
+			Message: message,
+		}, codes.InvalidArgument, "validation error")
+	}
+
+	return err
+}
+
+func FormatValidationError(err *protovalidate.ValidationError) (string, string, string) {
+	if err == nil {
+		return "", "", ""
+	}
+
+	for _, violation := range err.Violations {
+		if violation == nil || violation.Proto == nil {
+			continue
+		}
+		field := protovalidate.FieldPathString(violation.Proto.GetField())
+		rule := protovalidate.FieldPathString(violation.Proto.GetRule())
+		message := violation.Proto.GetMessage()
+		if field != "" && message != "" {
+			return field, rule, fmt.Sprintf("%s: %s", field, message)
+		}
+		return field, rule, message
+	}
+	return "", "", strings.TrimPrefix(err.Error(), "validation error: ")
+}
+
 func ValidateRequest(req any) error {
-	return ValidateRequestWithValidator(ValidatorMethod{}, req)
+	return ValidateRequestWithValidator(validator{}, req)
 }
 
 func ValidateRequestWithValidator(v Validator, req any) error {
@@ -43,7 +116,7 @@ func ValidateRequestWithValidator(v Validator, req any) error {
 }
 
 func ValidationUnaryServerInterceptor() grpc.UnaryServerInterceptor {
-	return UnaryServerInterceptorWithValidator(ValidatorMethod{})
+	return UnaryServerInterceptorWithValidator(validator{})
 }
 
 func UnaryServerInterceptorWithValidator(v Validator) grpc.UnaryServerInterceptor {
@@ -56,7 +129,7 @@ func UnaryServerInterceptorWithValidator(v Validator) grpc.UnaryServerIntercepto
 }
 
 func ValidationStreamServerInterceptor() grpc.StreamServerInterceptor {
-	return StreamServerInterceptorWithValidator(ValidatorMethod{})
+	return StreamServerInterceptorWithValidator(validator{})
 }
 
 func StreamServerInterceptorWithValidator(v Validator) grpc.StreamServerInterceptor {

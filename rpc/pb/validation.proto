@@ -1,0 +1,9 @@
+syntax = "proto3";
+package atlas_rpc;
+option go_package = "git.tatikoma.dev/corpix/atlas/rpc/pb;atlasrpc";
+
+message ValidationError {
+  string field = 1;
+  string rule = 2;
+  string message = 3;
+}

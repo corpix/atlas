@@ -4,14 +4,14 @@ version = $(shell date +"%Y-%m-%d").$(shell git rev-list --count HEAD)
 pkg := git.tatikoma.dev/corpix/atlas
 
 goverter = goverter gen \
-	-output-constraint '' \
-	-g 'wrapErrors yes' \
-	-g 'useZeroValueOnPointerInconsistency yes' \
-	-g 'ignoreMissing no' \
-	-g 'skipCopySameType yes' \
-	-g 'ignoreUnexported yes' \
-	-g 'matchIgnoreCase yes' \
-	-g 'enum no'
+       -output-constraint '' \
+       -g 'wrapErrors yes' \
+       -g 'useZeroValueOnPointerInconsistency yes' \
+       -g 'ignoreMissing no' \
+       -g 'skipCopySameType yes' \
+       -g 'ignoreUnexported yes' \
+       -g 'matchIgnoreCase yes' \
+       -g 'enum no'
 
 .PHONY: all
 all: test
@@ -23,8 +23,13 @@ lint:
 
 .PHONY: fmt
 fmt:
-	fieldalignment -fix $(shell go list -mod=mod all | grep -F $(pkg)) || true
+	fieldalignment -fix $(shell go list -mod=mod all | grep -F $(pkg) | grep -E -v '/pb(/.+)?$$') || true
 	go fmt ./...
+
+.PHONY: gen
+gen:
+	cd rpc && buf generate --template buf.gen.yaml
+	$(MAKE) fmt
 
 .PHONY: test
 test: lint
@@ -33,3 +38,4 @@ test: lint
 .PHONY: tag
 tag:
 	git tag v$(version)
+
