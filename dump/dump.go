@@ -1,6 +1,7 @@
 package dump
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/davecgh/go-spew/spew"
@@ -35,6 +36,19 @@ func Sprint(xs ...any) string {
 
 func Sprintf(format string, xs ...any) string {
 	return dumper.Sprintf(format, xs...)
+}
+
+func JSON(value any) string {
+	if value == nil {
+		return ""
+	}
+
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return ""
+	}
+
+	return string(encoded)
 }
 
 func Diff(a, b any, opts ...DiffOption) {
