@@ -140,7 +140,6 @@ func (*CertApp) Flags() app.Flags {
 		&app.StringFlag{
 			Name:  "ip-addresses",
 			Usage: "comma separated list of allowed ip addresses to encode into certificate",
-			Value: "127.0.0.1",
 		},
 		&app.StringFlag{
 			Name:  "dns-names",
