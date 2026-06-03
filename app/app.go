@@ -20,10 +20,11 @@ import (
 type (
 	void = struct{}
 
-	Context  = cli.Context
-	Super    = supervisor.Super
-	Command  = cli.Command
-	Commands = []*Command
+	Context    = cli.Context
+	Super      = supervisor.Super
+	Command    = cli.Command
+	Commands   = []*Command
+	ActionFunc = cli.ActionFunc
 
 	Config interface {
 		FromFile(path string) error
