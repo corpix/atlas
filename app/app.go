@@ -271,18 +271,13 @@ func (a *App[C]) runService(srv Service) error {
 	return srv.Run(ctx, &a.readyWg)
 }
 
-func (a *App[C]) Run(ctx *cli.Context) error {
+func (a *App[C]) RunServices(ctx *cli.Context, services ...Service) error {
 	a.Super.Run(func(ctx context.Context) error {
 		a.Watcher.Run(ctx)
 		return nil
 	})
 
-	for _, srv := range a.self.Services() {
-		if !srv.Enabled() {
-			continue
-		}
-
-		srv := srv
+	for _, srv := range services {
 		a.readyWg.Add(1)
 		a.Super.Run(func(ctx context.Context) error {
 			return a.runService(srv)
@@ -292,6 +287,16 @@ func (a *App[C]) Run(ctx *cli.Context) error {
 	a.self.Watchdog(ctx)
 
 	return nil
+}
+
+func (a *App[C]) Run(ctx *cli.Context) error {
+	var services Services
+	for _, srv := range a.self.Services() {
+		if srv.Enabled() {
+			services = append(services, srv)
+		}
+	}
+	return a.RunServices(ctx, services...)
 }
 
 func (a *App[C]) Exec(args []string) error {
