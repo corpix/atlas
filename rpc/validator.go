@@ -11,7 +11,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"git.tatikoma.dev/corpix/atlas/errors"
-	atlasrpc "git.tatikoma.dev/corpix/atlas/rpc/pb"
+	atlasrpcpb "git.tatikoma.dev/corpix/atlas/rpc/pb"
 )
 
 type Validator interface {
@@ -56,7 +56,7 @@ func (e *ValidationError) Error() string {
 
 func (e *ValidationError) ErrorDetails() []proto.Message {
 	return []proto.Message{
-		&atlasrpc.ValidationError{
+		&atlasrpcpb.ValidationError{
 			Field:   e.Field,
 			Rule:    e.Rule,
 			Message: e.Message,
