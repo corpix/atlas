@@ -14,19 +14,25 @@ type (
 	Logger  = zerolog.Logger
 	Context = zerolog.Context
 	Event   = *zerolog.Event
+	Level   = zerolog.Level
 )
 
 var DefaultLogger *Logger
 
 var (
-	DebugLevel = zerolog.DebugLevel
-	InfoLevel  = zerolog.InfoLevel
-	WarnLevel  = zerolog.WarnLevel
-	ErrorLevel = zerolog.ErrorLevel
-	FatalLevel = zerolog.FatalLevel
-	PanicLevel = zerolog.PanicLevel
+	TraceLevel    = zerolog.TraceLevel
+	DebugLevel    = zerolog.DebugLevel
+	InfoLevel     = zerolog.InfoLevel
+	WarnLevel     = zerolog.WarnLevel
+	ErrorLevel    = zerolog.ErrorLevel
+	FatalLevel    = zerolog.FatalLevel
+	PanicLevel    = zerolog.PanicLevel
+	NoLevel       = zerolog.NoLevel
+	DisabledLevel = zerolog.Disabled
 
-	SetLevel = zerolog.SetGlobalLevel
+	SetLevel    = zerolog.SetGlobalLevel
+	GlobalLevel = zerolog.GlobalLevel
+	ParseLevel  = zerolog.ParseLevel
 )
 
 var (
