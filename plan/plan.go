@@ -29,8 +29,8 @@ type (
 		Weight() int64
 	}
 	Resolver[T Spec[K, T], K comparable, O Ops[O]] interface {
-		Requests(op O, spec T) []T
-		Provides(op O, spec T) []T
+		Requests(task *Task[T, K, O]) []T
+		Provides(task *Task[T, K, O]) []T
 	}
 
 	Graph[T Spec[K, T], K comparable, O Ops[O]] struct {
@@ -346,7 +346,7 @@ func (p *Plan[T, K, O]) findProvider(tasks Tasks[T, K, O], resolver Resolver[T, 
 		bestWeight int64
 	)
 	for i, task := range tasks {
-		provides := resolver.Provides(task.Op, task.Spec)
+		provides := resolver.Provides(task)
 		for _, provided := range provides {
 			if !req.Equal(provided) {
 				continue
@@ -382,7 +382,7 @@ func (p *Plan[T, K, O]) Graph(resolver Resolver[T, K, O], ops ...O) (*Graph[T, K
 	}
 
 	for i, task := range tasks {
-		requests := resolver.Requests(task.Op, task.Spec)
+		requests := resolver.Requests(task)
 		for _, req := range requests {
 			providerIdx, err := p.findProvider(tasks, resolver, req)
 			if err != nil {

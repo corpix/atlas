@@ -40,6 +40,25 @@ func (r resource) Weight() int64 {
 	return 0
 }
 
+type resourceResolver struct {
+	requests func(*Task[resource, string, resourceOps]) []resource
+	provides func(*Task[resource, string, resourceOps]) []resource
+}
+
+func (r resourceResolver) Requests(task *Task[resource, string, resourceOps]) []resource {
+	if r.requests == nil {
+		return nil
+	}
+	return r.requests(task)
+}
+
+func (r resourceResolver) Provides(task *Task[resource, string, resourceOps]) []resource {
+	if r.provides == nil {
+		return nil
+	}
+	return r.provides(task)
+}
+
 func TestPlan(t *testing.T) {
 	type plan = Plan[resource, string, resourceOps]
 	current := []resource{
@@ -98,4 +117,54 @@ func TestPlan(t *testing.T) {
 		sp = sp.Transition(next)
 		test(t, sp)
 	})
+}
+
+func TestPlanToposortResolverReceivesTask(t *testing.T) {
+	current := []resource{
+		{ID: "app", Name: "old", Size: 1},
+	}
+	next := []resource{
+		{ID: "app", Name: "new", Size: 2},
+		{ID: "snapshot", Name: "old", Size: 1},
+	}
+
+	p := New(resourceOpsEnum, current, next)
+	var requested []string
+	var provided []string
+	resolver := resourceResolver{
+		requests: func(task *Task[resource, string, resourceOps]) []resource {
+			assert.True(t, task.Plan == p)
+			requested = append(requested, string(task.Op)+":"+task.ID+":"+task.Current.Name+"->"+task.Next.Name)
+			if task.ID != "app" {
+				return nil
+			}
+
+			assert.Equal(t, resourceOpsEnum.Update(), task.Op)
+			assert.Equal(t, resource{ID: "app", Name: "old", Size: 1}, task.Current)
+			assert.Equal(t, resource{ID: "app", Name: "new", Size: 2}, task.Next)
+			assert.Equal(t, task.Next, task.Spec)
+
+			return []resource{{Name: task.Current.Name, Size: task.Current.Size}}
+		},
+		provides: func(task *Task[resource, string, resourceOps]) []resource {
+			assert.True(t, task.Plan == p)
+			provided = append(provided, string(task.Op)+":"+task.ID)
+			return []resource{{Name: task.Spec.Name, Size: task.Spec.Size}}
+		},
+	}
+
+	tasks, err := p.Toposort(resolver, resourceOpsEnum.Create(), resourceOpsEnum.Update())
+	assert.NoError(t, err)
+	if assert.Len(t, tasks, 2) {
+		assert.Equal(t, "snapshot", tasks[0].ID)
+		assert.Equal(t, "app", tasks[1].ID)
+	}
+	assert.ElementsMatch(t, []string{
+		"create:snapshot:->old",
+		"update:app:old->new",
+	}, requested)
+	assert.ElementsMatch(t, []string{
+		"create:snapshot",
+		"update:app",
+	}, provided)
 }
