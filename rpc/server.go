@@ -4,8 +4,8 @@ import (
 	"context"
 	"crypto/tls"
 	"net"
-	"path/filepath"
 	"os"
+	"path/filepath"
 
 	grpclog "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
 	"google.golang.org/grpc"
@@ -66,6 +66,8 @@ func NewServer(tlsCfg *tls.Config, a *auth.Auth, l log.Logger) *grpc.Server {
 type serverOptions struct {
 	validator   Validator
 	transformer Transformer
+	unaryChain  []grpc.UnaryServerInterceptor
+	streamChain []grpc.StreamServerInterceptor
 }
 
 type ServerOption func(*serverOptions)
@@ -82,6 +84,18 @@ func WithTransformer(t Transformer) ServerOption {
 	}
 }
 
+func WithUnaryServerInterceptors(is ...grpc.UnaryServerInterceptor) ServerOption {
+	return func(opts *serverOptions) {
+		opts.unaryChain = append(opts.unaryChain, is...)
+	}
+}
+
+func WithStreamServerInterceptors(is ...grpc.StreamServerInterceptor) ServerOption {
+	return func(opts *serverOptions) {
+		opts.streamChain = append(opts.streamChain, is...)
+	}
+}
+
 func NewServerWithOptions(tlsCfg *tls.Config, a *auth.Auth, l log.Logger, options ...ServerOption) *grpc.Server {
 	logger := LoggerInterceptor(l)
 	opts := serverOptions{
@@ -91,19 +105,24 @@ func NewServerWithOptions(tlsCfg *tls.Config, a *auth.Auth, l log.Logger, option
 	for _, option := range options {
 		option(&opts)
 	}
+	unary := append(
+		append([]grpc.UnaryServerInterceptor{}, opts.unaryChain...),
+		grpclog.UnaryServerInterceptor(logger),
+		a.GRPC().UnaryInterceptor(),
+		UnaryServerInterceptorWithValidator(opts.validator),
+		UnaryServerInterceptorWithTransformer(opts.transformer),
+	)
+	stream := append(
+		append([]grpc.StreamServerInterceptor{}, opts.streamChain...),
+		grpclog.StreamServerInterceptor(logger),
+		a.GRPC().StreamInterceptor(),
+		StreamServerInterceptorWithValidator(opts.validator),
+		StreamServerInterceptorWithTransformer(opts.transformer),
+	)
+
 	return grpc.NewServer(
 		grpc.Creds(credentials.NewTLS(tlsCfg)),
-		grpc.ChainUnaryInterceptor(
-			grpclog.UnaryServerInterceptor(logger),
-			a.GRPC().UnaryInterceptor(),
-			UnaryServerInterceptorWithValidator(opts.validator),
-			UnaryServerInterceptorWithTransformer(opts.transformer),
-		),
-		grpc.ChainStreamInterceptor(
-			grpclog.StreamServerInterceptor(logger),
-			a.GRPC().StreamInterceptor(),
-			StreamServerInterceptorWithValidator(opts.validator),
-			StreamServerInterceptorWithTransformer(opts.transformer),
-		),
+		grpc.ChainUnaryInterceptor(unary...),
+		grpc.ChainStreamInterceptor(stream...),
 	)
 }
