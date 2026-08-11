@@ -1,6 +1,6 @@
 {
   inputs = {
-    nixpkgs.url = "tarball+https://git.tatikoma.dev/corpix/nixpkgs/archive/v2025-03-16.768365.tar.gz";
+    nixpkgs.url = "tarball+https://git.tatikoma.dev/corpix/nixpkgs/archive/corpix.tar.gz";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -18,27 +18,13 @@
         attrValues
       ;
 
-      goverter = buildGoModule rec {
-        pname = "goverter";
-        version = "1.5.1";
-
-        src = pkgs.fetchFromGitHub {
-          owner = "jmattheis";
-          repo = "goverter";
-          rev = "v${version}";
-          hash = "sha256-unmLOwXSexokYulP5DzNjVcUetvcBAJ6XK5zCgHuZQ0=";
-        };
-        vendorHash = "sha256-uQ1qKZLRwsgXKqSAERSqf+1cYKp6MTeVbfGs+qcdakE=";
-        ldflags = [ "-s" "-w" ];
-        subPackages = [ "cmd/goverter" ];
-      };
-
       envPackages = attrValues {
         inherit (pkgs)
           coreutils tree
           git
-          gcc pkg-config gnumake
+          gcc pkg-config gnumake just
           go gopls delve golangci-lint go-swagger
+          betteralign goverter
           hivemind
           python3
           openssl netcat
@@ -48,9 +34,6 @@
           protoc-gen-go protoc-gen-go-grpc
           grpc-gateway
           protoc-gen-doc
-        ;
-        inherit
-          goverter
         ;
       };
     in {
