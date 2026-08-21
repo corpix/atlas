@@ -28,16 +28,17 @@ type (
 		Equal(T) bool
 		Weight() int64
 	}
-	Resolver[T Spec[K, T], K comparable, O Ops[O]] interface {
-		Requests(task *Task[T, K, O]) []T
-		Provides(task *Task[T, K, O]) []T
+	Resolver[T Spec[K, T], K comparable] interface {
+		Requests(spec T) []T
+		Provides(spec T) []T
 	}
 
 	Graph[T Spec[K, T], K comparable, O Ops[O]] struct {
-		tasks    Tasks[T, K, O]
-		adj      []map[int]void
-		indegree []int
-		pos      []int
+		tasks       Tasks[T, K, O]
+		adj         []map[int]void
+		indegree    []int
+		pos         []int
+		unsatisfied []T
 	}
 
 	TaskGroups[T Spec[K, T], K comparable, O Ops[O]] map[O][]*Task[T, K, O]
@@ -137,6 +138,13 @@ func (g *Graph[T, K, O]) Toposort() (Tasks[T, K, O], error) {
 	}
 
 	return out, nil
+}
+
+// Unsatisfied reports the requests which no task in the plan supplies. A plan is
+// a delta against a live system, so this is not an error on its own: whether such
+// a request is expected to be met outside of the plan is for the caller to say.
+func (g *Graph[T, K, O]) Unsatisfied() []T {
+	return g.unsatisfied
 }
 
 func (g *Graph[T, K, O]) nodeID(task *Task[T, K, O]) string {
@@ -251,29 +259,14 @@ func (p *Plan[T, K, O]) Tasks(ops ...O) Tasks[T, K, O] {
 		ops = p.opsEnum.All()
 	}
 
-	var (
-		res      Tasks[T, K, O]
-		opDelete = p.opsEnum.Delete()
-	)
-	// fixme: apply toposort here
+	var res Tasks[T, K, O]
 	for _, op := range ops {
-		tasks := p.tasksByOp[op]
-		switch op { // note: change sorting order for operations which should (for example) run backwards (like delete)
-		case opDelete:
-			reversedTasks := make(Tasks[T, K, O], len(tasks))
-			j := len(tasks) - 1
-			for n, task := range tasks {
-				reversedTasks[j-n] = task
-			}
-			res = append(res, reversedTasks...)
-		default:
-			res = append(res, tasks...)
-		}
+		res = append(res, p.tasksByOp[op]...)
 	}
 	return res
 }
 
-func (p *Plan[T, K, O]) graph(resolver Resolver[T, K, O], ops ...O) (*Graph[T, K, O], error) {
+func (p *Plan[T, K, O]) graph(resolver Resolver[T, K], ops ...O) (*Graph[T, K, O], error) {
 	graph, err := p.Graph(resolver, ops...)
 	if err != nil {
 		return nil, err
@@ -281,7 +274,7 @@ func (p *Plan[T, K, O]) graph(resolver Resolver[T, K, O], ops ...O) (*Graph[T, K
 	return graph, nil
 }
 
-func (p *Plan[T, K, O]) Toposort(resolver Resolver[T, K, O], ops ...O) (Tasks[T, K, O], error) {
+func (p *Plan[T, K, O]) Toposort(resolver Resolver[T, K], ops ...O) (Tasks[T, K, O], error) {
 	g, err := p.graph(resolver, ops...)
 	if err != nil {
 		return nil, err
@@ -289,7 +282,7 @@ func (p *Plan[T, K, O]) Toposort(resolver Resolver[T, K, O], ops ...O) (Tasks[T,
 	return g.Toposort()
 }
 
-func (p *Plan[T, K, O]) Graphviz(resolver Resolver[T, K, O], ops ...O) (string, error) {
+func (p *Plan[T, K, O]) Graphviz(resolver Resolver[T, K], ops ...O) (string, error) {
 	g, err := p.graph(resolver, ops...)
 	if err != nil {
 		return "", err
@@ -340,14 +333,16 @@ outer:
 	return s
 }
 
-func (p *Plan[T, K, O]) findProvider(tasks Tasks[T, K, O], resolver Resolver[T, K, O], req T) (int, error) {
+// findProvider reports the task which supplies req, or -1 when no task does.
+// A plan is a delta against a live system, so a request may well be satisfied
+// by something which already exists and never enters the plan.
+func (p *Plan[T, K, O]) findProvider(provides [][]T, req T) int {
 	var (
 		bestIdx    = -1
 		bestWeight int64
 	)
-	for i, task := range tasks {
-		provides := resolver.Provides(task)
-		for _, provided := range provides {
+	for i := range provides {
+		for _, provided := range provides[i] {
 			if !req.Equal(provided) {
 				continue
 			}
@@ -358,15 +353,64 @@ func (p *Plan[T, K, O]) findProvider(tasks Tasks[T, K, O], resolver Resolver[T, 
 			}
 		}
 	}
-
-	if bestIdx == -1 {
-		return -1, fmt.Errorf("dependency not satisfied: %v", req.String())
-	}
-
-	return bestIdx, nil
+	return bestIdx
 }
 
-func (p *Plan[T, K, O]) Graph(resolver Resolver[T, K, O], ops ...O) (*Graph[T, K, O], error) {
+// deps splits the task dependencies into what it starts to depend on (acquires),
+// what it stops depending on (releases), what it begins to supply (provides) and
+// what it stops supplying (withdraws). A delete releases and withdraws everything,
+// an update which drops a reference releases just that reference. A task always
+// supplies the entity it carries, so a resolver only names what else it supplies.
+func (p *Plan[T, K, O]) deps(resolver Resolver[T, K], task *Task[T, K, O]) (acquires, releases, provides, withdraws []T) {
+	var (
+		zero         T
+		currRequests []T
+		currProvides []T
+	)
+	if task.Current != zero {
+		currRequests = resolver.Requests(task.Current)
+		currProvides = append([]T{task.Current}, resolver.Provides(task.Current)...)
+	}
+	if task.Next != zero {
+		acquires = resolver.Requests(task.Next)
+		provides = append([]T{task.Next}, resolver.Provides(task.Next)...)
+	}
+	return acquires, p.except(currRequests, acquires), provides, p.except(currProvides, provides)
+}
+
+func (p *Plan[T, K, O]) except(specs, except []T) []T {
+	if len(specs) == 0 {
+		return nil
+	}
+	if len(except) == 0 {
+		return specs
+	}
+
+	index := make(map[K]void, len(except))
+	for _, spec := range except {
+		index[spec.Identify()] = void{}
+	}
+
+	out := make([]T, 0, len(specs))
+	for _, spec := range specs {
+		if _, ok := index[spec.Identify()]; ok {
+			continue
+		}
+		out = append(out, spec)
+	}
+	return out
+}
+
+func (p *Plan[T, K, O]) supplies(specs []T, req T) bool {
+	for _, spec := range specs {
+		if req.Equal(spec) {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *Plan[T, K, O]) Graph(resolver Resolver[T, K], ops ...O) (*Graph[T, K, O], error) {
 	tasks := p.Tasks(ops...)
 	if len(tasks) == 0 {
 		return &Graph[T, K, O]{
@@ -381,32 +425,56 @@ func (p *Plan[T, K, O]) Graph(resolver Resolver[T, K, O], ops ...O) (*Graph[T, K
 		pos[i] = i
 	}
 
+	addEdge := func(from, to int) {
+		if from == to {
+			return
+		}
+		if adj[from] == nil {
+			adj[from] = map[int]void{}
+		}
+		if _, ok := adj[from][to]; ok {
+			return
+		}
+		adj[from][to] = void{}
+		indegree[to]++
+	}
+
+	acquires := make([][]T, len(tasks))
+	releases := make([][]T, len(tasks))
+	provides := make([][]T, len(tasks))
+	withdraws := make([][]T, len(tasks))
 	for i, task := range tasks {
-		requests := resolver.Requests(task)
-		for _, req := range requests {
-			providerIdx, err := p.findProvider(tasks, resolver, req)
-			if err != nil {
-				return nil, err
-			}
-			if providerIdx == i {
+		acquires[i], releases[i], provides[i], withdraws[i] = p.deps(resolver, task)
+	}
+
+	var unsatisfied []T
+	for i := range tasks {
+		// what a task starts to depend on has to be supplied before it runs
+		for _, req := range acquires[i] {
+			providerIdx := p.findProvider(provides, req)
+			if providerIdx < 0 {
+				unsatisfied = append(unsatisfied, req)
 				continue
 			}
-			if adj[providerIdx] == nil {
-				adj[providerIdx] = map[int]void{}
+			addEdge(providerIdx, i)
+		}
+		// what a task stops depending on may only be withdrawn after it runs,
+		// and every consumer has to let go before the supply is taken away
+		for _, req := range releases[i] {
+			for j := range tasks {
+				if p.supplies(withdraws[j], req) {
+					addEdge(i, j)
+				}
 			}
-			if _, ok := adj[providerIdx][i]; ok {
-				continue
-			}
-			adj[providerIdx][i] = void{}
-			indegree[i]++
 		}
 	}
 
 	return &Graph[T, K, O]{
-		tasks:    tasks,
-		adj:      adj,
-		indegree: indegree,
-		pos:      pos,
+		tasks:       tasks,
+		adj:         adj,
+		indegree:    indegree,
+		pos:         pos,
+		unsatisfied: unsatisfied,
 	}, nil
 }
 
@@ -465,15 +533,33 @@ func (p *Plan[T, K, O]) push(op O, id K, current T, next T) {
 
 func (p *Plan[T, K, O]) build(current, next []T) {
 	currentIndex, nextIndex := p.index(current, next)
-	for id, nextSpec := range nextIndex {
-		currentSpec, ok := currentIndex[id]
-		if !ok {
-			p.push(p.opsEnum.Create(), id, currentSpec, nextSpec)
+
+	// input order decides the order of tasks sharing an operation, so a plan
+	// built from the same specs always comes out the same way
+	seen := make(map[K]void, len(next))
+	for _, spec := range next {
+		id := spec.Identify()
+		if _, ok := seen[id]; ok {
+			continue
 		}
+		seen[id] = void{}
+		currentSpec, ok := currentIndex[id]
+		if ok {
+			continue
+		}
+		p.push(p.opsEnum.Create(), id, currentSpec, nextIndex[id])
 	}
-	for id, currentSpec := range currentIndex {
+
+	seen = make(map[K]void, len(current))
+	for _, spec := range current {
+		id := spec.Identify()
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = void{}
 		var op O
 		nextSpec, ok := nextIndex[id]
+		currentSpec := currentIndex[id]
 		if ok {
 			if currentSpec.Equal(nextSpec) {
 				op = p.opsEnum.Read()
