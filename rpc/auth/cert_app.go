@@ -178,7 +178,7 @@ func (a *CertApp) Cert(ctx *app.Context) error {
 	if revoke && initCRL {
 		return errors.New("init-crl and revoke are mutually exclusive")
 	}
-	if !(generateCA || revoke || initCRL) && certType == "" {
+	if !generateCA && !revoke && !initCRL && certType == "" {
 		return errors.New("certificate type is required")
 	}
 

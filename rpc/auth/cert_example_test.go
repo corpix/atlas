@@ -15,7 +15,9 @@ func ExampleCertTool() {
 	if err != nil {
 		panic(err)
 	}
-	defer os.RemoveAll(dir)
+	defer func() {
+		_ = os.RemoveAll(dir)
+	}()
 
 	cwd, err := os.Getwd()
 	if err != nil {

@@ -161,7 +161,7 @@ func (a *App[C]) Watchdog(ctx *cli.Context) {
 
 	exit := make(chan error)
 	go func() {
-		exit <- a.Runtime.Super.Wait(ctx.Context)
+		exit <- a.Super.Wait(ctx.Context)
 	}()
 
 watchdog:
@@ -183,7 +183,7 @@ watchdog:
 				a.self.Notify(sig)
 			case SignalGroupStop:
 				log.Warn().Msg("shutting down supervisor")
-				a.Runtime.Super.Cancel(nil)
+				a.Super.Cancel(nil)
 				break watchdog
 			default:
 				log.Warn().
