@@ -1,6 +1,7 @@
 package rpc
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -32,4 +33,25 @@ func NewClientConn(a *auth.Auth, l log.Logger, host string, port int) (*grpc.Cli
 			MinConnectTimeout: 20 * time.Second,
 		}),
 	)
+}
+
+// TimeoutUnaryClientInterceptor bounds every unary call which does not already
+// carry a tighter deadline, so an unresponsive server never pins a caller.
+func TimeoutUnaryClientInterceptor(timeout time.Duration) grpc.UnaryClientInterceptor {
+	return func(
+		ctx context.Context,
+		method string,
+		req, reply any,
+		cc *grpc.ClientConn,
+		invoker grpc.UnaryInvoker,
+		opts ...grpc.CallOption,
+	) error {
+		deadline, ok := ctx.Deadline()
+		if ok && time.Until(deadline) <= timeout {
+			return invoker(ctx, method, req, reply, cc, opts...)
+		}
+		ctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
 }
