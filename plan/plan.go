@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"git.tatikoma.dev/corpix/atlas/dump"
 )
@@ -55,8 +56,12 @@ type (
 		Current T
 		Next    T
 	}
-	Stat[O comparable] map[O]int
-	Ops[O comparable]  interface { // fixme: get rid of that, this is overcomplication and I don't like it, could we use predefined consts?
+	Stat[O comparable] struct {
+		Counters         map[O]int
+		GraphDuration    time.Duration
+		ToposortDuration time.Duration
+	}
+	Ops[O comparable] interface { // fixme: get rid of that, this is overcomplication and I don't like it, could we use predefined consts?
 		comparable
 		Read() O
 		Create() O
@@ -221,8 +226,8 @@ func (ts Tasks[T, K, O]) String() string {
 }
 
 func (s Stat[O]) String() string {
-	res := make([]string, 0, len(s))
-	for k, v := range s {
+	res := make([]string, 0, len(s.Counters))
+	for k, v := range s.Counters {
 		res = append(res, fmt.Sprintf("%v:%d", k, v))
 	}
 	sort.Strings(res)
@@ -275,11 +280,18 @@ func (p *Plan[T, K, O]) graph(resolver Resolver[T, K], ops ...O) (*Graph[T, K, O
 }
 
 func (p *Plan[T, K, O]) Toposort(resolver Resolver[T, K], ops ...O) (Tasks[T, K, O], error) {
-	g, err := p.graph(resolver, ops...)
+	var (
+		started = time.Now()
+		g, err  = p.graph(resolver, ops...)
+	)
+	p.stat.GraphDuration = time.Since(started)
 	if err != nil {
 		return nil, err
 	}
-	return g.Toposort()
+	started = time.Now()
+	tasks, err := g.Toposort()
+	p.stat.ToposortDuration = time.Since(started)
+	return tasks, err
 }
 
 func (p *Plan[T, K, O]) Graphviz(resolver Resolver[T, K], ops ...O) (string, error) {
@@ -501,7 +513,7 @@ func (p Plan[T, K, O]) index(current, next []T) (map[K]T, map[K]T) {
 }
 
 func (p *Plan[T, K, O]) push(op O, id K, current T, next T) {
-	p.stat[op]++
+	p.stat.Counters[op]++
 
 	task := &Task[T, K, O]{
 		ID:      id,
@@ -579,7 +591,9 @@ func New[T Spec[K, T], K comparable, O Ops[O]](_ O, current, next []T) *Plan[T, 
 		next:       next,
 		tasksByOp:  TaskGroups[T, K, O]{},
 		tasksIndex: TaskIndex[T, K, O]{},
-		stat:       Stat[O]{},
+		stat: Stat[O]{
+			Counters: map[O]int{},
+		},
 	}
 	plan.build(current, next)
 
