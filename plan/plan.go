@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"container/heap"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -99,34 +100,51 @@ func DiffFilterOp[T Spec[K, T], K comparable, O Ops[O]](ops ...O) DiffFilter[T, 
 	}
 }
 
+// readyQueue pops the ready task with the lowest input position, which is the
+// order the previous re-sort of the whole ready slice produced.
+type readyQueue struct {
+	items []int
+	pos   []int
+}
+
+func (q *readyQueue) Len() int           { return len(q.items) }
+func (q *readyQueue) Less(i, j int) bool { return q.pos[q.items[i]] < q.pos[q.items[j]] }
+func (q *readyQueue) Swap(i, j int)      { q.items[i], q.items[j] = q.items[j], q.items[i] }
+
+func (q *readyQueue) Push(x any) {
+	q.items = append(q.items, x.(int))
+}
+
+func (q *readyQueue) Pop() any {
+	old := q.items
+	n := len(old)
+	item := old[n-1]
+	q.items = old[:n-1]
+	return item
+}
+
 func (g *Graph[T, K, O]) Toposort() (Tasks[T, K, O], error) {
 	if len(g.tasks) == 0 {
 		return g.tasks, nil
 	}
 
-	ready := make([]int, 0, len(g.tasks))
+	ready := &readyQueue{pos: g.pos}
 	for i := range g.tasks {
 		if g.indegree[i] == 0 {
-			ready = append(ready, i)
+			ready.items = append(ready.items, i)
 		}
 	}
-	sort.Slice(ready, func(i, j int) bool {
-		return g.pos[ready[i]] < g.pos[ready[j]]
-	})
+	heap.Init(ready)
 
 	out := make(Tasks[T, K, O], 0, len(g.tasks))
-	for len(ready) > 0 {
-		curr := ready[0]
-		ready = ready[1:]
+	for ready.Len() > 0 {
+		curr := heap.Pop(ready).(int)
 		out = append(out, g.tasks[curr])
 
 		for next := range g.adj[curr] {
 			g.indegree[next]--
 			if g.indegree[next] == 0 {
-				ready = append(ready, next)
-				sort.Slice(ready, func(i, j int) bool {
-					return g.pos[ready[i]] < g.pos[ready[j]]
-				})
+				heap.Push(ready, next)
 			}
 		}
 	}
@@ -345,15 +363,33 @@ outer:
 	return s
 }
 
+// supplyIndex buckets the tasks which supply a spec by that spec identity, so
+// a lookup does not scan every task. This relies on Equal implying equal
+// Identify: a spec whose equality is looser than its identity would be missed.
+func (p *Plan[T, K, O]) supplyIndex(supplies [][]T) map[K][]int {
+	index := make(map[K][]int, len(supplies))
+	for i := range supplies {
+		for _, supplied := range supplies[i] {
+			id := supplied.Identify()
+			refs := index[id]
+			if len(refs) > 0 && refs[len(refs)-1] == i {
+				continue
+			}
+			index[id] = append(refs, i)
+		}
+	}
+	return index
+}
+
 // findProvider reports the task which supplies req, or -1 when no task does.
 // A plan is a delta against a live system, so a request may well be satisfied
 // by something which already exists and never enters the plan.
-func (p *Plan[T, K, O]) findProvider(provides [][]T, req T) int {
+func (p *Plan[T, K, O]) findProvider(index map[K][]int, provides [][]T, req T) int {
 	var (
 		bestIdx    = -1
 		bestWeight int64
 	)
-	for i := range provides {
+	for _, i := range index[req.Identify()] {
 		for _, provided := range provides[i] {
 			if !req.Equal(provided) {
 				continue
@@ -459,11 +495,15 @@ func (p *Plan[T, K, O]) Graph(resolver Resolver[T, K], ops ...O) (*Graph[T, K, O
 		acquires[i], releases[i], provides[i], withdraws[i] = p.deps(resolver, task)
 	}
 
-	var unsatisfied []T
+	var (
+		unsatisfied   []T
+		provideIndex  = p.supplyIndex(provides)
+		withdrawIndex = p.supplyIndex(withdraws)
+	)
 	for i := range tasks {
 		// what a task starts to depend on has to be supplied before it runs
 		for _, req := range acquires[i] {
-			providerIdx := p.findProvider(provides, req)
+			providerIdx := p.findProvider(provideIndex, provides, req)
 			if providerIdx < 0 {
 				unsatisfied = append(unsatisfied, req)
 				continue
@@ -473,7 +513,7 @@ func (p *Plan[T, K, O]) Graph(resolver Resolver[T, K], ops ...O) (*Graph[T, K, O
 		// what a task stops depending on may only be withdrawn after it runs,
 		// and every consumer has to let go before the supply is taken away
 		for _, req := range releases[i] {
-			for j := range tasks {
+			for _, j := range withdrawIndex[req.Identify()] {
 				if p.supplies(withdraws[j], req) {
 					addEdge(i, j)
 				}
