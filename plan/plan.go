@@ -373,8 +373,9 @@ outer:
 }
 
 // supplyIndex buckets the tasks which supply a spec by that spec identity, so
-// a lookup does not scan every task. This relies on Equal implying equal
-// Identify: a spec whose equality is looser than its identity would be missed.
+// a lookup does not scan every task. It is a fast path only: a request which
+// names what it wants by attributes rather than by identity lands in no bucket,
+// and the caller falls back to a scan.
 func (p *Plan[T, K, O]) supplyIndex(supplies [][]T) map[K][]int {
 	index := make(map[K][]int, len(supplies))
 	for i := range supplies {
@@ -399,18 +400,44 @@ func (p *Plan[T, K, O]) findProvider(index map[K][]int, provides [][]T, req T) i
 		bestWeight int64
 	)
 	for _, i := range index[req.Identify()] {
-		for _, provided := range provides[i] {
-			if !req.Equal(provided) {
-				continue
-			}
-			weight := provided.Weight()
-			if bestIdx == -1 || weight > bestWeight {
-				bestIdx = i
-				bestWeight = weight
-			}
+		weight, ok := p.supplyWeight(provides[i], req)
+		if ok && (bestIdx == -1 || weight > bestWeight) {
+			bestIdx = i
+			bestWeight = weight
+		}
+	}
+	if bestIdx >= 0 {
+		return bestIdx
+	}
+
+	// a request which names its supplier by attributes rather than by identity
+	// is in no bucket of the index
+	for i := range provides {
+		weight, ok := p.supplyWeight(provides[i], req)
+		if ok && (bestIdx == -1 || weight > bestWeight) {
+			bestIdx = i
+			bestWeight = weight
 		}
 	}
 	return bestIdx
+}
+
+// supplyWeight reports the weight of the heaviest supply of req in supplies.
+func (p *Plan[T, K, O]) supplyWeight(supplies []T, req T) (int64, bool) {
+	var (
+		weight int64
+		found  bool
+	)
+	for _, supplied := range supplies {
+		if !req.Equal(supplied) {
+			continue
+		}
+		if !found || supplied.Weight() > weight {
+			weight = supplied.Weight()
+			found = true
+		}
+	}
+	return weight, found
 }
 
 // deps splits the task dependencies into what it starts to depend on (acquires),
@@ -522,7 +549,20 @@ func (p *Plan[T, K, O]) Graph(resolver Resolver[T, K], ops ...O) (*Graph[T, K, O
 		// what a task stops depending on may only be withdrawn after it runs,
 		// and every consumer has to let go before the supply is taken away
 		for _, req := range releases[i] {
+			var found bool
 			for _, j := range withdrawIndex[req.Identify()] {
+				if p.supplies(withdraws[j], req) {
+					addEdge(i, j)
+					found = true
+				}
+			}
+			if found {
+				continue
+			}
+
+			// a request which names its supplier by attributes rather than by
+			// identity is in no bucket of the index
+			for j := range tasks {
 				if p.supplies(withdraws[j], req) {
 					addEdge(i, j)
 				}

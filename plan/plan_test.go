@@ -121,10 +121,10 @@ func TestPlan(t *testing.T) {
 		t.Run("checks overall stats", func(t *testing.T) {
 			changes, stat := p.Stat()
 			assert.Equal(t, 3, changes)
-			assert.Equal(t, 1, stat[resourceOpsEnum.Create()])
-			assert.Equal(t, 1, stat[resourceOpsEnum.Update()])
-			assert.Equal(t, 1, stat[resourceOpsEnum.Delete()])
-			assert.Equal(t, 1, stat[resourceOpsEnum.Read()])
+			assert.Equal(t, 1, stat.Counters[resourceOpsEnum.Create()])
+			assert.Equal(t, 1, stat.Counters[resourceOpsEnum.Update()])
+			assert.Equal(t, 1, stat.Counters[resourceOpsEnum.Delete()])
+			assert.Equal(t, 1, stat.Counters[resourceOpsEnum.Read()])
 		})
 	}
 
@@ -241,14 +241,22 @@ func TestPlanToposortMissingSupplier(t *testing.T) {
 	}
 
 	p := New(resourceOpsEnum, nil, []resource{app})
+	assert.Empty(t, p.Unsatisfied(), "nothing is reported before a graph is built")
+
 	tasks, err := p.Toposort(resolver)
 	assert.NoError(t, err, "a plan is a delta, a request may be satisfied outside of it")
 	assert.Equal(t, []string{"app"}, tasks.ids())
+	assert.Equal(t, []resource{{Name: "absent", Size: 9}}, p.Unsatisfied(),
+		"the caller has to be able to tell whether it expected the request to be met outside the plan")
 
 	graph, err := p.Graph(resolver)
 	assert.NoError(t, err)
-	assert.Equal(t, []resource{{Name: "absent", Size: 9}}, graph.Unsatisfied(),
-		"the caller has to be able to tell whether it expected the request to be met outside the plan")
+	assert.Equal(t, graph.Unsatisfied(), p.Unsatisfied(),
+		"the plan reports what its own graph build found")
+
+	_, err = p.Toposort(resourceResolver{})
+	assert.NoError(t, err)
+	assert.Empty(t, p.Unsatisfied(), "a later build replaces the report instead of adding to it")
 }
 
 func TestPlanTasksOrderIsStable(t *testing.T) {
