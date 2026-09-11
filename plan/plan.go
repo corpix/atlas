@@ -22,6 +22,8 @@ type (
 		next       []T
 		diff       Diff[T, K, O]
 		changes    int
+
+		unsatisfied []T
 	}
 	Spec[K comparable, T any] interface {
 		comparable
@@ -277,6 +279,12 @@ func (p *Plan[T, K, O]) Changes() int {
 	return p.changes
 }
 
+// Unsatisfied reports the requests the last graph build found no supplier for.
+// Empty until Toposort or Graphviz has run.
+func (p *Plan[T, K, O]) Unsatisfied() []T {
+	return p.unsatisfied
+}
+
 func (p *Plan[T, K, O]) Tasks(ops ...O) Tasks[T, K, O] {
 	if len(ops) == 0 {
 		ops = p.opsEnum.All()
@@ -294,6 +302,7 @@ func (p *Plan[T, K, O]) graph(resolver Resolver[T, K], ops ...O) (*Graph[T, K, O
 	if err != nil {
 		return nil, err
 	}
+	p.unsatisfied = graph.Unsatisfied()
 	return graph, nil
 }
 
