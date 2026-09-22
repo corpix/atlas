@@ -21,7 +21,7 @@ type (
 	void = struct{}
 
 	Context    = cli.Context
-	Super      = supervisor.Super
+	Super      = *supervisor.Group
 	Command    = cli.Command
 	Commands   = []*Command
 	ActionFunc = cli.ActionFunc
@@ -272,16 +272,22 @@ func (a *App[C]) runService(srv Service) error {
 }
 
 func (a *App[C]) RunServices(ctx *cli.Context, services ...Service) error {
-	a.Super.Run(func(ctx context.Context) error {
+	err := a.Super.Go("watcher", func(ctx context.Context) error {
 		a.Watcher.Run(ctx)
 		return nil
 	})
+	if err != nil {
+		return errors.Wrap(err, "failed to run file watcher")
+	}
 
 	for _, srv := range services {
 		a.readyWg.Add(1)
-		a.Super.Run(func(ctx context.Context) error {
+		err = a.Super.Go(srv.Name(), func(ctx context.Context) error {
 			return a.runService(srv)
 		})
+		if err != nil {
+			return errors.Wrapf(err, "failed to run service %q", srv.Name())
+		}
 	}
 
 	a.self.Watchdog(ctx)

@@ -47,5 +47,9 @@ conv:
 test: lint
   go test -v ./...
 
+cover *packages="./...":
+  go test -coverprofile=.cover.out {{packages}}
+  go tool cover -func=.cover.out
+
 tag:
   git tag "v$(date +"%Y-%m-%d").$(git rev-list --count HEAD)"

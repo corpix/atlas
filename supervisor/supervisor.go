@@ -2,6 +2,8 @@ package supervisor
 
 import (
 	"context"
+
+	"git.tatikoma.dev/corpix/atlas/errors"
 )
 
 type (
@@ -11,19 +13,15 @@ type (
 	ContextCancel = context.CancelCauseFunc
 	Cause         error
 
-	Super interface {
-		Context
-		Run(Job)
-		Cancel(cause Cause)
-		Attach(child Super)
-		Wait(ctx Context) error
-	}
+	Exec func(ctx Context) error
 )
 
-func New(ctx context.Context) *Runner {
-	innerCtx, cancel := context.WithCancelCause(ctx)
-	return &Runner{
-		Context: innerCtx,
-		cancel:  cancel,
-	}
+var (
+	ErrNameEmpty    = errors.New("name is empty")
+	ErrNameConflict = errors.New("name conflicts with an existing entry")
+	ErrStopped      = errors.New("group is stopped")
+)
+
+func New(ctx Context) *Group {
+	return newGroup(ctx, nil, "")
 }
