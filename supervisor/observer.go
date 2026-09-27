@@ -11,6 +11,13 @@ const (
 	ResultCanceled
 )
 
+var Results = []Result{
+	ResultSuccess,
+	ResultFailure,
+	ResultPanic,
+	ResultCanceled,
+}
+
 func (r Result) String() string {
 	switch r {
 	case ResultSuccess:
@@ -54,6 +61,7 @@ const (
 	RunReasonInitial RunReason = iota + 1
 	RunReasonRestart
 	RunReasonScheduled
+	RunReasonManual
 )
 
 func (r RunReason) String() string {
@@ -64,6 +72,8 @@ func (r RunReason) String() string {
 		return "restart"
 	case RunReasonScheduled:
 		return "scheduled"
+	case RunReasonManual:
+		return "manual"
 	}
 	return "unknown"
 }
@@ -125,6 +135,7 @@ type (
 		Active        uint64
 		Pending       uint64
 		MaxConcurrent uint64
+		Reason        RunReason
 		Result        ScheduleResult
 	}
 
