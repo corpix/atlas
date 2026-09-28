@@ -16,6 +16,26 @@ import (
 	"git.tatikoma.dev/corpix/atlas/rpc/auth"
 )
 
+type server interface {
+	Serve(net.Listener) error
+	Stop()
+}
+
+func Serve(ctx context.Context, srv server, listener net.Listener) error {
+	done := make(chan void)
+	defer close(done)
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			srv.Stop()
+		case <-done: // srv.Serve fail should not block, context will not be canceled in this case
+		}
+	}()
+
+	return srv.Serve(listener)
+}
+
 func Listen(ctx context.Context, url string) (net.Listener, func(), error) {
 	ep, err := ParseEndpoint(url)
 	if err != nil {
