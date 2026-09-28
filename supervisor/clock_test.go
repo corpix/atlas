@@ -104,5 +104,3 @@ func (c *fakeClock) Advance(d time.Duration) {
 func newFakeClock(now time.Time) *fakeClock {
 	return &fakeClock{now: now, wake: make(chan void, 1)}
 }
-
-func noJitter(time.Duration) time.Duration { return 0 }

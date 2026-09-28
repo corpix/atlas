@@ -36,17 +36,6 @@ func (o *recordingObserver) runEvents() []RunEvent {
 	return append([]RunEvent(nil), o.runs...)
 }
 
-func (o *recordingObserver) scheduleEvents() []ScheduleEvent {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	return append([]ScheduleEvent(nil), o.schedules...)
-}
-
-func eventually(t *testing.T, condition func() bool) {
-	t.Helper()
-	require.Eventually(t, condition, 2*time.Second, time.Millisecond)
-}
-
 func TestWorkerValidation(t *testing.T) {
 	parent := New(context.Background())
 	defer parent.Cancel(nil)
