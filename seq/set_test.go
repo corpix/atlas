@@ -236,3 +236,26 @@ func TestDifferenceBy(t *testing.T) {
 		setTestItemID,
 	))
 }
+
+func TestSetEqual(t *testing.T) {
+	assert.True(t, SetEqual([]string{"a", "b"}, []string{"b", "a"}))
+	assert.True(t, SetEqual([]string{"a", "a"}, []string{"a"}))
+	assert.True(t, SetEqual([]string(nil), []string{}))
+	assert.False(t, SetEqual([]string{"a", "b"}, []string{"a", "c"}))
+}
+
+func TestSetEqualBy(t *testing.T) {
+	i1, i2 := mkSetItem(1, "a"), mkSetItem(2, "b")
+	i1Updated := mkSetItem(1, "a_updated")
+
+	assert.True(t, SetEqualBy(
+		[]setTestItem{i1, i2, i1},
+		[]setTestItem{i2, i1Updated},
+		setTestItemID,
+	))
+	assert.False(t, SetEqualBy(
+		[]setTestItem{i1},
+		[]setTestItem{i2},
+		setTestItemID,
+	))
+}

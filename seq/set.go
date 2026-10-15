@@ -63,6 +63,30 @@ func DifferenceBy[K comparable, V any](left, right []V, id func(V) K) []V {
 	return difference
 }
 
+func SetEqual[V comparable](left, right []V) bool {
+	return SetEqualBy(left, right, func(value V) V { return value })
+}
+
+func SetEqualBy[K comparable, V any](left, right []V, id func(V) K) bool {
+	leftIDs := make(map[K]struct{}, len(left))
+	for _, value := range left {
+		leftIDs[id(value)] = struct{}{}
+	}
+	rightIDs := make(map[K]struct{}, len(right))
+	for _, value := range right {
+		rightIDs[id(value)] = struct{}{}
+	}
+	if len(leftIDs) != len(rightIDs) {
+		return false
+	}
+	for key := range leftIDs {
+		if _, ok := rightIDs[key]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
 func (st *Set[K, V]) Has(id K) bool {
 	_, ok := st.vn[id]
 	return ok
