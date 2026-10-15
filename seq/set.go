@@ -35,8 +35,8 @@ func (st *Set[K, V]) Del(id K) bool {
 	st.v = append(st.v[:n], st.v[n+1:]...)
 	delete(st.kv, id)
 	delete(st.vn, id)
-	for i := n; i < len(st.v[n:]); i++ {
-		st.vn[st.id(st.v[i])] = n + i
+	for i := n; i < len(st.v); i++ {
+		st.vn[st.id(st.v[i])] = i
 	}
 
 	return true

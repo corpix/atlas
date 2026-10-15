@@ -69,6 +69,16 @@ func TestSet(t *testing.T) {
 		assert.False(t, st.Del(666))
 	})
 
+	t.Run("DeleteReindexesFollowingItems", func(t *testing.T) {
+		i1, i2 := mkSetItem(1, "a"), mkSetItem(2, "b")
+		i3, i4 := mkSetItem(3, "c"), mkSetItem(4, "d")
+		st := NewSet([]setTestItem{i1, i2, i3, i4}, setTestItemID)
+
+		assert.True(t, st.Del(i2.ID))
+		assert.True(t, st.Del(i3.ID))
+		assert.Equal(t, []setTestItem{i1, i4}, getAllSetItems(st))
+	})
+
 	t.Run("Get", func(t *testing.T) {
 		i1 := mkSetItem(10, "z")
 		st := NewSet([]setTestItem{i1}, setTestItemID)
