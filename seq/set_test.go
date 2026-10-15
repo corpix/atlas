@@ -206,3 +206,23 @@ func TestSet(t *testing.T) {
 		assert.Equal(t, getAllSetItems(st1), getAllSetItems(diffNoOp))
 	})
 }
+
+func TestDifferenceBy(t *testing.T) {
+	i1, i2 := mkSetItem(1, "a"), mkSetItem(2, "b")
+	i2Updated := mkSetItem(2, "b_updated")
+	i3, i4 := mkSetItem(3, "c"), mkSetItem(4, "d")
+
+	assert.Equal(t,
+		[]setTestItem{i1, i3},
+		DifferenceBy(
+			[]setTestItem{i1, i2, i3, i2Updated},
+			[]setTestItem{i2Updated, i4},
+			setTestItemID,
+		),
+	)
+	assert.Nil(t, DifferenceBy(
+		[]setTestItem{i1, i2},
+		[]setTestItem{i1, i2},
+		setTestItemID,
+	))
+}

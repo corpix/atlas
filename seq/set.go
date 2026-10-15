@@ -42,6 +42,27 @@ func (st *Set[K, V]) Del(id K) bool {
 	return true
 }
 
+func DifferenceBy[K comparable, V any](left, right []V, id func(V) K) []V {
+	rightIDs := make(map[K]struct{}, len(right))
+	for _, value := range right {
+		rightIDs[id(value)] = struct{}{}
+	}
+
+	seen := make(map[K]struct{}, len(left))
+	var difference []V
+	for _, value := range left {
+		key := id(value)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		if _, ok := rightIDs[key]; !ok {
+			difference = append(difference, value)
+		}
+	}
+	return difference
+}
+
 func (st *Set[K, V]) Has(id K) bool {
 	_, ok := st.vn[id]
 	return ok
