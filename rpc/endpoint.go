@@ -11,8 +11,8 @@ import (
 type Endpoint struct {
 	Scheme string
 	Host   string
-	Port   uint16
 	Path   string
+	Port   uint16
 }
 
 func (e *Endpoint) Network() string { return e.Scheme }

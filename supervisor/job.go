@@ -76,9 +76,9 @@ type JobSnapshot struct {
 	LastScheduled     time.Time
 	LastDispatched    time.Time
 	NextFiring        time.Time
+	Runs              RunStats
 	LastStartDelay    time.Duration
 	LastDispatchDelay time.Duration
-	Runs              RunStats
 	Firings           uint64
 	Skips             uint64
 	Pending           uint64
@@ -92,8 +92,8 @@ type Job struct {
 	clock    clock
 	group    *Group
 	jitter   func(time.Duration) time.Duration
-	stats    JobSnapshot
 	config   JobConfig
+	stats    JobSnapshot
 	sequence uint64
 	mu       sync.Mutex
 }

@@ -31,8 +31,8 @@ type (
 	}
 
 	Server struct {
-		config   Config
 		gatherer prometheus.Gatherer
+		config   Config
 	}
 )
 
