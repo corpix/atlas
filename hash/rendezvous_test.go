@@ -16,7 +16,7 @@ type rendezvousMember struct {
 
 const (
 	rendezvousKeyStride uint64 = 0x9e3779b97f4a7c15
-	rendezvousKeyBase          = 16
+	rendezvousKeyBase   int    = 16
 )
 
 var rendezvousByString = NewWeightedRendezvous(
