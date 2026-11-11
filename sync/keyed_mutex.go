@@ -2,7 +2,8 @@ package sync
 
 import (
 	"context"
-	"sync"
+
+	"git.tatikoma.dev/corpix/atlas/maps"
 )
 
 type void = struct{}
@@ -10,20 +11,15 @@ type void = struct{}
 // KeyedMutex serializes work per key without holding a lock over unrelated
 // keys, so a critical section may span a slow call.
 type KeyedMutex[K comparable] struct {
-	held map[K]chan void
-	sync.Mutex
+	held maps.Concurrent[K, chan void]
 }
 
 func (m *KeyedMutex[K]) Lock(ctx context.Context, key K) error {
 	for {
-		m.Mutex.Lock()
-		released, ok := m.held[key]
-		if !ok {
-			m.held[key] = make(chan void)
-			m.Mutex.Unlock()
+		released, loaded := m.held.LoadOrStore(key, make(chan void))
+		if !loaded {
 			return nil
 		}
-		m.Mutex.Unlock()
 
 		select {
 		case <-ctx.Done():
@@ -34,10 +30,7 @@ func (m *KeyedMutex[K]) Lock(ctx context.Context, key K) error {
 }
 
 func (m *KeyedMutex[K]) Unlock(key K) {
-	m.Mutex.Lock()
-	released, ok := m.held[key]
-	delete(m.held, key)
-	m.Mutex.Unlock()
+	released, ok := m.held.LoadAndDel(key)
 	if ok {
 		close(released)
 	}
@@ -53,5 +46,5 @@ func (m *KeyedMutex[K]) With(ctx context.Context, key K, fn func() error) error 
 }
 
 func NewKeyedMutex[K comparable]() *KeyedMutex[K] {
-	return &KeyedMutex[K]{held: map[K]chan void{}}
+	return &KeyedMutex[K]{}
 }
