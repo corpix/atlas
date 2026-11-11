@@ -47,3 +47,39 @@ func TestSortedZeroValue(t *testing.T) {
 	m.Set("a", 1)
 	assert.Equal(t, []string{"a", "b"}, slices.Collect(m.Keys()))
 }
+
+func TestSortedDelWhileIterating(t *testing.T) {
+	var m Sorted[string, int]
+	for n, key := range []string{"a", "b", "c", "d"} {
+		m.Set(key, n)
+	}
+
+	var seen []string
+	for key := range m.All() {
+		seen = append(seen, key)
+		m.Del(key)
+		if key == "b" {
+			m.Del("c")
+		}
+	}
+
+	assert.Equal(t, []string{"a", "b", "d"}, seen)
+	assert.Equal(t, 0, m.Len())
+}
+
+func TestSortedSetWhileIterating(t *testing.T) {
+	var m Sorted[string, int]
+	m.Set("b", 0)
+	m.Set("d", 0)
+
+	var seen []string
+	for key := range m.Keys() {
+		seen = append(seen, key)
+		if key == "b" {
+			m.Set("a", 0)
+			m.Set("c", 0)
+		}
+	}
+
+	assert.Equal(t, []string{"b", "c", "d"}, seen)
+}

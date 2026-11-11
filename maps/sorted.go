@@ -50,27 +50,44 @@ func (m *Sorted[K, V]) Len() int {
 }
 
 func (m *Sorted[K, V]) Keys() iter.Seq[K] {
-	return slices.Values(m.keys)
+	return func(yield func(K) bool) {
+		for key := range m.All() {
+			if !yield(key) {
+				return
+			}
+		}
+	}
 }
 
 func (m *Sorted[K, V]) Values() iter.Seq[V] {
 	return func(yield func(V) bool) {
-		for _, key := range m.keys {
-			if !yield(m.kv[key]) {
+		for _, value := range m.All() {
+			if !yield(value) {
 				return
 			}
 		}
 	}
 }
 
+// All yields in key order and, like a map, allows Set and Del while iterating
 func (m *Sorted[K, V]) All() iter.Seq2[K, V] {
 	return func(yield func(K, V) bool) {
-		for _, key := range m.keys {
+		for n := 0; n < len(m.keys); {
+			key := m.keys[n]
 			if !yield(key, m.kv[key]) {
 				return
 			}
+			n = m.after(key)
 		}
 	}
+}
+
+func (m *Sorted[K, V]) after(key K) int {
+	n, found := slices.BinarySearch(m.keys, key)
+	if found {
+		n++
+	}
+	return n
 }
 
 func NewSorted[K cmp.Ordered, V any]() *Sorted[K, V] {
