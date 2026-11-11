@@ -23,6 +23,9 @@ func (m *Sorted[K, V]) Has(key K) bool {
 }
 
 func (m *Sorted[K, V]) Set(key K, value V) {
+	if m.kv == nil {
+		m.kv = map[K]V{}
+	}
 	_, ok := m.kv[key]
 	if !ok {
 		n, _ := slices.BinarySearch(m.keys, key)

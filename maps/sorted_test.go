@@ -37,3 +37,13 @@ func TestSorted(t *testing.T) {
 	}
 	assert.Equal(t, []string{"a"}, keys)
 }
+
+func TestSortedZeroValue(t *testing.T) {
+	var m Sorted[string, int]
+	assert.False(t, m.Has("a"))
+	assert.False(t, m.Del("a"))
+
+	m.Set("b", 2)
+	m.Set("a", 1)
+	assert.Equal(t, []string{"a", "b"}, slices.Collect(m.Keys()))
+}
