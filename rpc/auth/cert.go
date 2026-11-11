@@ -17,10 +17,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"git.tatikoma.dev/corpix/atlas/errors"
+	"git.tatikoma.dev/corpix/atlas/maps"
 )
 
 const (
@@ -42,8 +42,7 @@ type (
 		CertFile string
 	}
 	CertTypeRegistry struct {
-		types map[string]CertType
-		mu    sync.RWMutex
+		types maps.Concurrent[string, CertType]
 	}
 
 	CertToolGenerateOptions struct {
@@ -87,7 +86,7 @@ type (
 )
 
 func NewCertTypeRegistry() *CertTypeRegistry {
-	return &CertTypeRegistry{types: map[string]CertType{}}
+	return &CertTypeRegistry{}
 }
 
 // Register registers a new certificate type for generation.
@@ -99,22 +98,15 @@ func (r *CertTypeRegistry) Register(name string, certType CertType) error {
 		return errors.New("certificate key and cert file names are required")
 	}
 
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if _, exists := r.types[name]; exists {
+	_, exists := r.types.LoadOrStore(name, certType)
+	if exists {
 		return errors.Errorf("certificate type %q already registered", name)
 	}
-
-	r.types[name] = certType
 	return nil
 }
 
 func (r *CertTypeRegistry) Lookup(name string) (CertType, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	certType, ok := r.types[name]
+	certType, ok := r.types.Load(name)
 	if !ok {
 		return CertType{}, errors.Errorf("unknown certificate type: %s", name)
 	}
