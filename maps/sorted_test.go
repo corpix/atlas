@@ -25,8 +25,8 @@ func TestSorted(t *testing.T) {
 	_, ok = m.Get("z")
 	assert.False(t, ok)
 
-	assert.True(t, m.Delete("b"))
-	assert.False(t, m.Delete("b"))
+	assert.True(t, m.Del("b"))
+	assert.False(t, m.Del("b"))
 	assert.False(t, m.Has("b"))
 	assert.Equal(t, []string{"a", "c"}, slices.Collect(m.Keys()))
 

@@ -31,7 +31,7 @@ func (m *Sorted[K, V]) Set(key K, value V) {
 	m.kv[key] = value
 }
 
-func (m *Sorted[K, V]) Delete(key K) bool {
+func (m *Sorted[K, V]) Del(key K) bool {
 	_, ok := m.kv[key]
 	if !ok {
 		return false
